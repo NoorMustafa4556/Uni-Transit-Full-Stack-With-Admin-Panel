@@ -1,15 +1,16 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
 import '../Models/AppInfoModel.dart';
 
-// Default app info so the app never hangs if Supabase row is missing
+// Default app info so the app never hangs
 AppInfoModel _defaultAppInfo() => AppInfoModel(
       appName: 'Uni-Transit',
       appTagline: 'Smart University Transport System',
       visionHeader: 'PROJECT VISION',
-      vision: 'Connecting students and drivers seamlessly.',
-      version: '1.0.0',
-      university: 'University of Management & Technology',
+      vision: 'Connecting students and drivers seamlessly across IUB campuses.',
+      version: '2.0.0',
+      university: 'The Islamia University of Bahawalpur',
       appLogoUrl: '',
       primaryColor: '#1A237E',
       accentColor: '#FFC107',
@@ -17,40 +18,20 @@ AppInfoModel _defaultAppInfo() => AppInfoModel(
       cardColor: '#FFFFFF',
       textPrimaryColor: '#0F172A',
       textSecondaryColor: '#64748B',
-      contributors: [],
+      contributors: [
+        ContributorModel(name: 'Noor Mustafa', role: 'Full Stack Engineer', subtitle: 'Lead Developer'),
+      ],
     );
 
 final appInfoProvider = FutureProvider<AppInfoModel>((ref) async {
   try {
-    final res = await Supabase.instance.client
-        .from('app_settings')
-        .select()
-        .eq('key', 'about')
-        .maybeSingle()
-        .timeout(const Duration(seconds: 5));
-
-    if (res == null) return _defaultAppInfo();
-
-    final data = (res['value'] as Map<String, dynamic>?) ?? {};
-    return AppInfoModel(
-      appName: data['appName'] ?? 'Uni-Transit',
-      appTagline: data['appTagline'] ?? 'Smart University Transport System',
-      visionHeader: data['visionHeader'] ?? 'PROJECT VISION',
-      vision: data['vision'] ?? '',
-      version: data['version'] ?? '1.0.0',
-      university: data['university'] ?? '',
-      appLogoUrl: data['appLogoUrl'] ?? '',
-      primaryColor: data['primaryColor'] ?? '#1A237E',
-      accentColor: data['accentColor'] ?? '#FFC107',
-      backgroundColor: data['backgroundColor'] ?? '#F8FAFC',
-      cardColor: data['cardColor'] ?? '#FFFFFF',
-      textPrimaryColor: data['textPrimaryColor'] ?? '#0F172A',
-      textSecondaryColor: data['textSecondaryColor'] ?? '#64748B',
-      contributors: (data['contributors'] as List? ?? [])
-          .map((item) => ContributorModel.fromMap(Map<String, dynamic>.from(item)))
-          .toList(),
-    );
-  } catch (_) {
-    return _defaultAppInfo();
-  }
+    final response = await ApiClient().get(ApiConfig.config).timeout(const Duration(seconds: 4));
+    if (response.statusCode == 200 && response.data != null) {
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return AppInfoModel.fromMap(data);
+      }
+    }
+  } catch (_) {}
+  return _defaultAppInfo();
 });

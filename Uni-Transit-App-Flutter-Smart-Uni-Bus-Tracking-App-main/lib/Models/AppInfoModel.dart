@@ -1,5 +1,3 @@
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
-
 class AppInfoModel {
   final String appName;
   final String appTagline;
@@ -36,24 +34,22 @@ class AppInfoModel {
     required this.contributors,
   });
 
-  factory AppInfoModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-    
+  factory AppInfoModel.fromMap(Map<String, dynamic> data) {
     return AppInfoModel(
-      appName: data['appName'] ?? 'UniTransit',
-      appTagline: data['appTagline'] ?? 'Smart University Transport System',
-      visionHeader: data['visionHeader'] ?? 'PROJECT VISION',
+      appName: data['appName'] ?? data['app_name'] ?? 'UniTransit',
+      appTagline: data['appTagline'] ?? data['app_tagline'] ?? 'Smart University Transport System',
+      visionHeader: data['visionHeader'] ?? data['vision_header'] ?? 'PROJECT VISION',
       vision: data['vision'] ?? '',
-      version: data['version'] ?? '',
-      university: data['university'] ?? '',
-      appLogoUrl: data['appLogoUrl'] ?? '',
+      version: data['version'] ?? '1.0.0',
+      university: data['university'] ?? 'The Islamia University of Bahawalpur',
+      appLogoUrl: data['appLogoUrl'] ?? data['app_logo_url'] ?? '',
       
-      primaryColor: data['primaryColor'] ?? '#1A237E',
-      accentColor: data['accentColor'] ?? '#FFC107',
-      backgroundColor: data['backgroundColor'] ?? '#F8FAFC',
-      cardColor: data['cardColor'] ?? '#FFFFFF',
-      textPrimaryColor: data['textPrimaryColor'] ?? '#0F172A',
-      textSecondaryColor: data['textSecondaryColor'] ?? '#64748B',
+      primaryColor: data['primaryColor'] ?? data['primary_color'] ?? '#1A237E',
+      accentColor: data['accentColor'] ?? data['accent_color'] ?? '#FFC107',
+      backgroundColor: data['backgroundColor'] ?? data['background_color'] ?? '#F8FAFC',
+      cardColor: data['cardColor'] ?? data['card_color'] ?? '#FFFFFF',
+      textPrimaryColor: data['textPrimaryColor'] ?? data['text_primary_color'] ?? '#0F172A',
+      textSecondaryColor: data['textSecondaryColor'] ?? data['text_secondary_color'] ?? '#64748B',
       
       contributors: (data['contributors'] as List? ?? [])
           .map((item) => ContributorModel.fromMap(Map<String, dynamic>.from(item)))

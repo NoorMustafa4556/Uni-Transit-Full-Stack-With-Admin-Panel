@@ -1,18 +1,8 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
-import '../Core/Constants/CampusLocations.dart';
-import '../Core/Constants/CustomRoutes.dart';
-
-Map<String, dynamic> _toCamelCase(Map<String, dynamic> map) {
-  final Map<String, dynamic> result = {};
-  map.forEach((key, value) {
-    final camelKey = key.replaceAllMapped(RegExp(r'_([a-z])'), (match) => match.group(1)!.toUpperCase());
-    result[camelKey] = value;
-  });
-  return result;
-}
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
 
 class RouteState {
   final Map<String, dynamic> officialRoutes;
@@ -55,113 +45,55 @@ class RouteState {
 }
 
 class RouteNotifier extends Notifier<RouteState> {
+  final ApiClient _api = ApiClient();
+
   @override
   RouteState build() {
-    _listenToOfficialRoutes();
-    _listenToCustomPolylines();
+    _fetchRoutes();
     return RouteState();
   }
 
-  void _listenToOfficialRoutes() {
-    final sub = Supabase.instance.client
-        .from('schedules')
-        .stream(primaryKey: ['id'])
-        .listen((event) {
-      final Map<String, dynamic> mergedRoutes = {};
-
-      for (var row in event) {
-        final data = _toCamelCase(row);
-        final route = data['route'] as String?;
-        final from = data['from'] as String?;
-        final to = data['to'] as String?;
-
-        final date = data['date'] as String?;
-        final operatingDays = data['operatingDays'] as List?;
-        final departureTime = data['departureTime'] as String?;
-
-        final hasNoDate = date == null || date.isEmpty;
-        final hasNoOperatingDays = operatingDays == null || operatingDays.isEmpty;
-        final hasNoTime = departureTime == null ||
-            departureTime.isEmpty ||
-            departureTime == 'TBA' ||
-            departureTime == 'Live';
-
-        if (route != null && from != null && to != null && hasNoDate && hasNoOperatingDays && hasNoTime) {
-          String cleanKey = route.trim();
-          mergedRoutes[cleanKey] = {
-            "from": from,
-            "to": to,
+  Future<void> _fetchRoutes() async {
+    try {
+      final res = await _api.get(ApiConfig.routes);
+      if (res.statusCode == 200 && res.data != null) {
+        final List list = res.data is List ? res.data : (res.data['results'] ?? []);
+        final Map<String, dynamic> merged = {};
+        for (var row in list) {
+          final code = row['code'] ?? row['title'];
+          final startHub = row['start_hub']?['name'] ?? 'Abbasia Campus';
+          final endHub = row['end_hub']?['name'] ?? 'Baghdad-ul-Jadeed Campus';
+          merged[code.toString()] = {
+            "id": row['id'],
+            "title": row['title'],
+            "code": code,
+            "from": startHub,
+            "to": endHub,
+            "stops": row['stops'] ?? [],
           };
         }
+        state = state.copyWith(officialRoutes: merged);
       }
-
-      state = state.copyWith(officialRoutes: mergedRoutes);
-    });
-    ref.onDispose(() => sub.cancel());
+    } catch (_) {}
   }
 
-  void _listenToCustomPolylines() {
-    final sub = Supabase.instance.client
-        .from('custom_polylines')
-        .stream(primaryKey: ['route_name'])
-        .listen((event) {
-      final Map<String, List<LatLng>> newRoutes = {};
-
-      for (var row in event) {
-        final routeName = row['route_name'].toString();
-        final points = row['coordinates'];
-        if (points is List) {
-          newRoutes[routeName] = points.map((p) {
-            if (p is List && p.length >= 2) {
-              return LatLng((p[0] as num).toDouble(), (p[1] as num).toDouble());
-            } else {
-              final point = Map<String, dynamic>.from(p as Map);
-              return LatLng(
-                (point['lat'] ?? point['latitude'] ?? 0.0 as num).toDouble(),
-                (point['lng'] ?? point['longitude'] ?? 0.0 as num).toDouble(),
-              );
-            }
-          }).toList();
-        }
-      }
-
-      state = state.copyWith(manualRoutes: newRoutes);
-    });
-    ref.onDispose(() => sub.cancel());
-  }
-
-  void selectRoute(String? route) {
-    if (route == null) {
-      state = state.copyWith(
-        selectedRoute: null,
-        routePoints: [],
-        fromHub: null,
-        toHub: null,
-      );
-      return;
-    }
-
-    final data = state.officialRoutes[route];
-    if (data != null) {
-      final from = data['from'] as String?;
-      final to = data['to'] as String?;
-      final manualPoints = state.manualRoutes[route];
-
-      state = state.copyWith(
-        selectedRoute: route,
-        fromHub: from,
-        toHub: to,
-        routePoints: manualPoints ?? [],
-      );
-    }
+  void selectRoute(String routeKey, {List<LatLng>? fallbackPoints}) {
+    final routeInfo = state.officialRoutes[routeKey];
+    state = state.copyWith(
+      selectedRoute: routeKey,
+      routePoints: fallbackPoints ?? [],
+      fromHub: routeInfo?['from'],
+      toHub: routeInfo?['to'],
+    );
   }
 
   void clearSelection() {
-    selectRoute(null);
-  }
-
-  void updateRoutePoints(List<LatLng> points) {
-    state = state.copyWith(routePoints: points);
+    state = state.copyWith(
+      selectedRoute: null,
+      routePoints: [],
+      fromHub: null,
+      toHub: null,
+    );
   }
 }
 

@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uni_transit/Models/BusSchedule.dart';
 import 'package:uni_transit/Services/ScheduleService.dart';
 import 'package:uni_transit/Core/Constants/AppColors.dart';
-import 'package:uni_transit/Views/Student/MapScreen.dart';
 import 'package:uni_transit/ViewModels/BusProvider.dart';
-import 'package:uni_transit/Views/Student/StudentDashboard.dart';
-import 'package:uni_transit/ViewModels/RouteProvider.dart';
+import 'package:uni_transit/Widgets/TrackMyTrainSheet.dart';
 
 class ScheduleScreen extends ConsumerStatefulWidget {
   const ScheduleScreen({super.key});
@@ -24,7 +21,11 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   late DateTime _currentMonth;
   late ScrollController _calendarScrollController;
   String _selectedTypeFilter = 'All';
-  String _selectedSession = 'All'; // For Morning/Afternoon/Evening dropdown
+  String _selectedSession = 'All'; // Morning, Afternoon, Evening
+  String _activeProfileTitle = "Spring 2026 Regular Schedule";
+  List<Map<String, dynamic>> _activeSlots = [];
+  bool _isLoadingSlots = false;
+
   final List<String> _weekdays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
   ];
@@ -36,14 +37,37 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     _currentMonth = DateTime(_selectedDate.year, _selectedDate.month);
     _calendarScrollController = ScrollController();
     
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedDate();
+      _loadProfileAndSlots();
+    });
+  }
+
+  Future<void> _loadProfileAndSlots() async {
+    setState(() => _isLoadingSlots = true);
+    try {
+      final profiles = await _scheduleService.getScheduleProfiles();
+      if (profiles.isNotEmpty) {
+        final active = profiles.firstWhere((p) => p['is_active'] == true, orElse: () => profiles.first);
+        _activeProfileTitle = active['title'] ?? _activeProfileTitle;
+      }
+      final slots = await _scheduleService.getActiveSlots();
+      if (mounted) {
+        setState(() {
+          _activeSlots = slots;
+          _isLoadingSlots = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingSlots = false);
+    }
   }
 
   void _scrollToSelectedDate() {
     if (_calendarScrollController.hasClients) {
       final index = _selectedDate.day - 1;
       _calendarScrollController.animateTo(
-        index * 62.0, // Width of date cell (54) + margin (8)
+        index * 62.0,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
@@ -59,7 +83,6 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   }
 
   String _getShift(String timeStr) {
-    // Expected format: "08:00 AM"
     try {
       final cleanTime = timeStr.trim().toLowerCase();
       if (cleanTime.contains('am')) {
@@ -76,12 +99,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final daysInMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
     final List<String> monthNames = [
       'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
       'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
     ];
+    final liveBuses = ref.watch(busProvider).liveBusData;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -98,117 +121,135 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         elevation: 2,
         shadowColor: Colors.black26,
         iconTheme: const IconThemeData(color: Colors.white),
-        centerTitle: false,
       ),
       body: Column(
         children: [
-          // 1. Calendar Header
+          // Active Profile Banner
           Container(
-            color: Theme.of(context).cardColor,
+            width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E293B),
+            ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  "${monthNames[_currentMonth.month - 1]} ${_currentMonth.year}",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: isDark ? AppColors.primaryYellow : AppColors.primaryNavy,
+                const Icon(Icons.schedule_rounded, color: Colors.amber, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "ACTIVE PROFILE: $_activeProfileTitle",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.chevron_left_rounded, color: isDark ? AppColors.primaryYellow : AppColors.primaryNavy),
-                      onPressed: () {
-                        setState(() {
-                          _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-                        });
-                      },
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.chevron_right_rounded, color: isDark ? AppColors.primaryYellow : AppColors.primaryNavy),
-                      onPressed: () {
-                        setState(() {
-                          _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-                        });
-                      },
-                    ),
-                  ],
                 ),
               ],
             ),
           ),
 
-          // 2. Horizontal Calendar list
+          // 1. Calendar Header (Month Switcher)
           Container(
-            height: 75,
-            color: Theme.of(context).cardColor,
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Colors.white,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, color: AppColors.primaryNavy),
+                  onPressed: () {
+                    setState(() {
+                      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
+                    });
+                  },
+                ),
+                Text(
+                  "${monthNames[_currentMonth.month - 1]} ${_currentMonth.year}",
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryNavy,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, color: AppColors.primaryNavy),
+                  onPressed: () {
+                    setState(() {
+                      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          // 2. Horizontal Date Strip
+          Container(
+            height: 76,
+            color: Colors.white,
             child: ListView.builder(
               controller: _calendarScrollController,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               itemCount: daysInMonth,
               itemBuilder: (context, index) {
-                final date = DateTime(_currentMonth.year, _currentMonth.month, index + 1);
-                final today = DateTime.now();
-                final isPast = DateTime(date.year, date.month, date.day).isBefore(DateTime(today.year, today.month, today.day));
+                final day = index + 1;
+                final date = DateTime(_currentMonth.year, _currentMonth.month, day);
                 final isSelected = date.year == _selectedDate.year &&
                     date.month == _selectedDate.month &&
                     date.day == _selectedDate.day;
-
                 final weekday = _getWeekdayName(date).substring(0, 3).toUpperCase();
 
                 return GestureDetector(
-                  onTap: isPast ? null : () {
+                  onTap: () {
                     setState(() {
                       _selectedDate = date;
                     });
                   },
                   child: Container(
                     width: 54,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isSelected 
-                          ? (isDark ? AppColors.primaryYellow : AppColors.primaryNavy) 
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
+                      color: isSelected ? AppColors.primaryNavy : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: isSelected 
-                            ? Colors.transparent 
-                            : (isDark ? Colors.white10 : Colors.grey[200]!),
+                        color: isSelected ? AppColors.primaryNavy : Colors.grey.shade200,
                       ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: AppColors.primaryNavy.withValues(alpha: 0.25),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              )
+                            ]
+                          : null,
                     ),
-                    child: Opacity(
-                      opacity: isPast ? 0.35 : 1.0,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            weekday,
-                            style: GoogleFonts.poppins(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected 
-                                  ? (isDark ? Colors.black87 : Colors.white70) 
-                                  : Colors.grey[400],
-                            ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          weekday,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.white70 : Colors.grey.shade500,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "${index + 1}",
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected 
-                                  ? (isDark ? Colors.black : Colors.white) 
-                                  : (isDark ? Colors.white : AppColors.textDark),
-                            ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "$day",
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? Colors.white : const Color(0xFF0F172A),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -216,67 +257,55 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
             ),
           ),
 
-          // 3. Dropdowns and filters
+          // 3. Filter Chips (Shift & Gender)
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: const Color(0xFFF8FAFC),
             child: Row(
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    value: _selectedSession,
-                    dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                    style: GoogleFonts.poppins(color: isDark ? Colors.white : AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500),
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.grey[200]!),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey[200]!),
-                      ),
+                // Session Filter Dropdown
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedSession,
+                      icon: const Icon(Icons.arrow_drop_down_rounded),
+                      style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A)),
+                      items: const [
+                        DropdownMenuItem(value: 'All', child: Text('All Shifts')),
+                        DropdownMenuItem(value: 'Morning', child: Text('Morning')),
+                        DropdownMenuItem(value: 'Afternoon', child: Text('Afternoon')),
+                        DropdownMenuItem(value: 'Evening', child: Text('Evening')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedSession = val);
+                      },
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'All', child: Text('All Sessions')),
-                      DropdownMenuItem(value: 'Morning', child: Text('Morning')),
-                      DropdownMenuItem(value: 'Afternoon', child: Text('Afternoon')),
-                      DropdownMenuItem(value: 'Evening', child: Text('Evening')),
-                    ],
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedSession = val!;
-                      });
-                    },
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
+                // Gender Filter Chips
                 Expanded(
-                  child: SizedBox(
-                    height: 45,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: ['All', 'Girls', 'Boys', 'Combined'].map((filter) {
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ['All', 'Boys', 'Girls', 'Combined'].map((filter) {
                         final isSelected = _selectedTypeFilter == filter;
                         return Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
-                            label: Text(
-                              filter,
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                                color: isSelected ? Colors.white : AppColors.textSecondary,
-                              ),
-                            ),
+                            label: Text(filter),
                             selected: isSelected,
                             selectedColor: AppColors.primaryNavy,
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                            labelStyle: GoogleFonts.poppins(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? Colors.white : Colors.grey.shade700,
                             ),
                             onSelected: (selected) {
                               setState(() {
@@ -295,85 +324,52 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
 
           // 4. Schedules list
           Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: Supabase.instance.client
-                  .from('active_buses')
-                  .stream(primaryKey: ['bus_number']),
-              builder: (context, activeBusesSnapshot) {
-                final activeBuses = activeBusesSnapshot.data ?? [];
+            child: StreamBuilder<List<BusSchedule>>(
+              stream: _scheduleService.getSchedules(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting && _isLoadingSlots) {
+                  return const Center(child: CircularProgressIndicator(color: AppColors.primaryNavy));
+                }
+                final allSchedules = snapshot.data ?? [];
+                if (allSchedules.isEmpty && _activeSlots.isEmpty) {
+                  return _buildEmptyState();
+                }
 
-                return StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: Supabase.instance.client
-                      .from('completed_trips')
-                      .stream(primaryKey: ['id']),
-                  builder: (context, completedTripsSnapshot) {
-                    final completedTrips = completedTripsSnapshot.data ?? [];
+                final selectedDateStr = _formatDate(_selectedDate);
+                final selectedDayName = _getWeekdayName(_selectedDate);
 
-                    return StreamBuilder<List<BusSchedule>>(
-                      stream: _scheduleService.getSchedules(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator(color: AppColors.primaryNavy));
-                        }
-                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                          return _buildEmptyState();
-                        }
+                final filteredSchedules = allSchedules.where((schedule) {
+                  if (_selectedTypeFilter != 'All') {
+                    final typeLower = schedule.type.toLowerCase();
+                    final filterLower = _selectedTypeFilter.toLowerCase();
+                    if (!typeLower.contains(filterLower) && !filterLower.contains(typeLower)) {
+                      return false;
+                    }
+                  }
+                  return true;
+                }).toList();
 
-                        final allSchedules = snapshot.data!;
-                        final selectedDateStr = _formatDate(_selectedDate);
-                        final selectedDayName = _getWeekdayName(_selectedDate);
+                final Map<String, List<BusSchedule>> shiftGroups = {
+                  'Morning': [],
+                  'Afternoon': [],
+                  'Evening': [],
+                };
 
-                        final filteredSchedules = allSchedules.where((schedule) {
-                          if (schedule.busNumber == 'TBA' || schedule.departureTime == 'TBA') {
-                            return false;
-                          }
+                for (var schedule in filteredSchedules) {
+                  final shift = _getShift(schedule.departureTime);
+                  shiftGroups[shift]?.add(schedule);
+                }
 
-                          if (_selectedTypeFilter != 'All') {
-                            final typeLower = schedule.type.toLowerCase();
-                            final filterLower = _selectedTypeFilter.toLowerCase();
-                            if (!typeLower.contains(filterLower) && !filterLower.contains(typeLower)) {
-                              return false;
-                            }
-                          }
-
-                          if (schedule.date != null && schedule.date!.isNotEmpty) {
-                            return schedule.date == selectedDateStr;
-                          }
-                          if (schedule.operatingDays != null && schedule.operatingDays!.isNotEmpty) {
-                            return schedule.operatingDays!.contains(selectedDayName);
-                          }
-                          return selectedDayName != 'Saturday' && selectedDayName != 'Sunday';
-                        }).toList();
-
-                        if (filteredSchedules.isEmpty) {
-                          return _buildEmptyState();
-                        }
-
-                        final Map<String, List<BusSchedule>> shiftGroups = {
-                          'Morning': [],
-                          'Afternoon': [],
-                          'Evening': [],
-                        };
-
-                        for (var schedule in filteredSchedules) {
-                          final shift = _getShift(schedule.departureTime);
-                          shiftGroups[shift]!.add(schedule);
-                        }
-
-                        return ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                          children: [
-                            if ((_selectedSession == 'All' || _selectedSession == 'Morning') && shiftGroups['Morning']!.isNotEmpty)
-                              _buildMobileShiftTable(context, 'MORNING SESSION', shiftGroups['Morning']!, activeBuses, completedTrips, selectedDateStr),
-                            if ((_selectedSession == 'All' || _selectedSession == 'Afternoon') && shiftGroups['Afternoon']!.isNotEmpty)
-                              _buildMobileShiftTable(context, 'AFTERNOON SESSION', shiftGroups['Afternoon']!, activeBuses, completedTrips, selectedDateStr),
-                            if ((_selectedSession == 'All' || _selectedSession == 'Evening') && shiftGroups['Evening']!.isNotEmpty)
-                              _buildMobileShiftTable(context, 'EVENING SESSION', shiftGroups['Evening']!, activeBuses, completedTrips, selectedDateStr),
-                          ],
-                        );
-                      },
-                    );
-                  },
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                  children: [
+                    if ((_selectedSession == 'All' || _selectedSession == 'Morning') && (shiftGroups['Morning']?.isNotEmpty ?? false))
+                      _buildMobileShiftTable(context, 'MORNING SESSION', shiftGroups['Morning']!, liveBuses, selectedDateStr),
+                    if ((_selectedSession == 'All' || _selectedSession == 'Afternoon') && (shiftGroups['Afternoon']?.isNotEmpty ?? false))
+                      _buildMobileShiftTable(context, 'AFTERNOON SESSION', shiftGroups['Afternoon']!, liveBuses, selectedDateStr),
+                    if ((_selectedSession == 'All' || _selectedSession == 'Evening') && (shiftGroups['Evening']?.isNotEmpty ?? false))
+                      _buildMobileShiftTable(context, 'EVENING SESSION', shiftGroups['Evening']!, liveBuses, selectedDateStr),
+                  ],
                 );
               },
             ),
@@ -387,8 +383,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     BuildContext context,
     String title,
     List<BusSchedule> schedules,
-    List<Map<String, dynamic>> activeBuses,
-    List<Map<String, dynamic>> completedTrips,
+    Map<String, dynamic> liveBuses,
     String selectedDateStr,
   ) {
     schedules.sort((a, b) => a.departureTime.compareTo(b.departureTime));
@@ -398,10 +393,10 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[150] ?? const Color(0xFFF3F4F6)),
+        border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -433,7 +428,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                   title,
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.bold,
-                    fontSize: 11,
+                    fontSize: 12,
                     color: AppColors.primaryNavy,
                     letterSpacing: 0.5,
                   ),
@@ -448,20 +443,20 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
               children: [
                 Expanded(
                   flex: 3,
-                  child: Text('TIME', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.grey[400])),
+                  child: Text('TIME', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey[400])),
                 ),
                 Expanded(
                   flex: 5,
-                  child: Text('ROUTE', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.grey[400])),
+                  child: Text('ROUTE', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey[400])),
                 ),
                 Expanded(
                   flex: 4,
-                  child: Text('BUS IDS', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.grey[400])),
+                  child: Text('SLOT COUNTER', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey[400])),
                 ),
                 Expanded(
                   flex: 2,
                   child: Center(
-                    child: Text('LIVE', style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.grey[400])),
+                    child: Text('TRACK', style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey[400])),
                   ),
                 ),
               ],
@@ -477,35 +472,19 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
             itemBuilder: (context, index) {
               final schedule = schedules[index];
 
-              String scheduleStatus = 'UPCOMING';
-              
-              final isActive = activeBuses.any((b) => 
-                  b['schedule_id'] == schedule.id || b['bus_number'] == schedule.busNumber);
-              
-              final isCompleted = completedTrips.any((t) => 
-                  (t['schedule_id'] == schedule.id || t['bus_number'] == schedule.busNumber) && 
-                  t['date'] == selectedDateStr && 
-                  t['status'] == 'completed');
+              // Find matching active slot
+              final matchingSlot = _activeSlots.firstWhere(
+                (s) => s['id'].toString() == schedule.id,
+                orElse: () => <String, dynamic>{},
+              );
 
-              if (isActive) {
-                scheduleStatus = 'ACTIVE';
-              } else if (isCompleted) {
-                scheduleStatus = 'COMPLETED';
-              }
+              final totalBuses = matchingSlot['total_buses'] ?? 1;
+              final dispatched = matchingSlot['dispatched_count'] ?? 1;
+              final remaining = matchingSlot['remaining_count'] ?? 0;
+              final isLastBus = matchingSlot['is_last_bus'] ?? false;
 
-              String? liveBusId;
-              List<String> scheduledBuses = schedule.busNumber
-                  .split(RegExp(r'[-, ]+'))
-                  .where((s) => s.isNotEmpty)
-                  .toList();
-
-              for (var bus in scheduledBuses) {
-                if (activeBuses.any((b) => b['bus_number'] == bus)) {
-                  liveBusId = bus;
-                  break;
-                }
-              }
-              final isLive = liveBusId != null || scheduleStatus == 'ACTIVE';
+              // Check if bus is live
+              final isLive = liveBuses.containsKey(schedule.busNumber);
 
               Color typeColor = AppColors.primaryNavy;
               final typeLower = schedule.type.toLowerCase();
@@ -516,25 +495,36 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
               }
 
               return InkWell(
-                onTap: isLive ? () {
-                  ref.read(routeProvider.notifier).selectRoute(schedule.route);
-                  ref.read(studentNavIndexProvider.notifier).setIndex(0);
-                } : null,
+                onTap: () {
+                  TrackMyTrainSheet.show(
+                    context,
+                    busNumber: schedule.busNumber,
+                    gender: schedule.type,
+                    totalBuses: totalBuses,
+                    dispatchedCount: dispatched,
+                    remainingCount: remaining,
+                    isLastBus: isLastBus,
+                    etaText: isLive ? "Live on Route" : "Scheduled",
+                    distanceText: isLive ? "Active" : "---",
+                  );
+                },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   child: Row(
                     children: [
+                      // Departure Time
                       Expanded(
                         flex: 3,
                         child: Text(
                           schedule.departureTime,
                           style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textDark,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0F172A),
                           ),
                         ),
                       ),
+                      // Route & Gender
                       Expanded(
                         flex: 5,
                         child: Column(
@@ -543,9 +533,9 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                             Text(
                               schedule.route,
                               style: GoogleFonts.poppins(
-                                fontSize: 11,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.textDark,
+                                color: const Color(0xFF1E293B),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -554,74 +544,66 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                             Text(
                               schedule.type,
                               style: GoogleFonts.poppins(
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                                 color: typeColor,
                               ),
                             ),
                           ],
                         ),
                       ),
+                      // Slot Dispatch Counter + Last Bus Alert
                       Expanded(
                         flex: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            schedule.busNumber,
-                            style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primaryNavy,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Disp: $dispatched/$totalBuses",
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF334155),
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            if (isLastBus)
+                              Container(
+                                margin: const EdgeInsets.only(top: 2),
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.red.shade300),
+                                ),
+                                child: Text(
+                                  "LAST BUS",
+                                  style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.red),
+                                ),
+                              )
+                            else
+                              Text(
+                                "$remaining left",
+                                style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey.shade500),
+                              ),
+                          ],
                         ),
                       ),
+                      // Live Action Button
                       Expanded(
                         flex: 2,
                         child: Center(
-                          child: isLive
-                              ? Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(
-                                    color: Colors.greenAccent[700]!.withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.gps_fixed_rounded,
-                                    size: 14,
-                                    color: Colors.greenAccent[700],
-                                  ),
-                                )
-                              : (scheduleStatus == 'COMPLETED'
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.withValues(alpha: 0.08),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: Colors.green.withValues(alpha: 0.2),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        "Done",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.green[700],
-                                        ),
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.gps_off_rounded,
-                                      size: 14,
-                                      color: Colors.grey[300],
-                                    )),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isLive ? Colors.green.shade50 : const Color(0xFFF1F5F9),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              isLive ? Icons.sensors_rounded : Icons.arrow_forward_ios_rounded,
+                              size: 14,
+                              color: isLive ? Colors.green : Colors.grey.shade600,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -640,9 +622,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.calendar_month_outlined, size: 50, color: Colors.grey[200]),
+          Icon(Icons.directions_bus_filled_outlined, size: 48, color: Colors.grey.shade400),
           const SizedBox(height: 12),
-          Text("No active schedules", style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 13)),
+          Text(
+            "No schedules found for this selection",
+            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade600),
+          ),
         ],
       ),
     );

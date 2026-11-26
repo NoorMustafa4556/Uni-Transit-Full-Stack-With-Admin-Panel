@@ -4,10 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
-import 'package:path/path.dart' as path;
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../../Core/Constants/AppColors.dart';
 import '../../ViewModels/AuthProvider.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
@@ -70,26 +66,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   Future<String?> _uploadProfileImage() async {
     if (_profileImage == null) return null;
-    
-    try {
-      final user = ref.read(authStateProvider).value;
-      if (user == null) return null;
-
-      final client = Supabase.instance.client;
-      final fileExtension = path.extension(_profileImage!.path);
-      final fileName = '${user.id}$fileExtension';
-      
-      await client.storage.from('profile_images').upload(
-        fileName,
-        _profileImage!,
-        fileOptions: const FileOptions(upsert: true),
-      );
-      
-      return client.storage.from('profile_images').getPublicUrl(fileName);
-    } catch (e) {
-      _showError("Failed to upload image: $e");
-      return null;
-    }
+    return _profileImage!.path;
   }
 
   void _submitProfile() async {

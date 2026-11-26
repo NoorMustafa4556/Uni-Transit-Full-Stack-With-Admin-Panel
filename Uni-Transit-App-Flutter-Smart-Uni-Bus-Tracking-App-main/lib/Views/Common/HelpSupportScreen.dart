@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uni_transit/Core/Constants/AppColors.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
 import 'package:uni_transit/Services/AuthService.dart';
-import 'package:intl/intl.dart';
 import 'package:uni_transit/Widgets/CustomAppBar.dart';
 
 class HelpSupportScreen extends StatefulWidget {
@@ -15,138 +15,154 @@ class HelpSupportScreen extends StatefulWidget {
 }
 
 class _HelpSupportScreenState extends State<HelpSupportScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final TextEditingController _nameController = TextEditingController();
+  final ApiClient _api = ApiClient();
+  final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _issueController = TextEditingController();
-  
-  List<Map<String, dynamic>> _userTickets = [];
-  String? _userRole;
+  final TextEditingController _descriptionController = TextEditingController();
+
+  List<Map<String, dynamic>> _contacts = [];
+  List<Map<String, dynamic>> _faqs = [];
+  List<Map<String, dynamic>> _tickets = [];
+  bool _isLoading = true;
   bool _isSubmitting = false;
-  int _activeTabIndex = 0; // 0 for Submit, 1 for History
-  final Set<String> _expandedTicketIds = {};
-  final FirebaseUser? _currentUser = FirebaseAuth.instance.currentUser;
+  int _activeTabIndex = 0; // 0 for Quick Help, 1 for Submit Ticket, 2 for My Tickets
 
   @override
   void initState() {
     super.initState();
-    _fetchUserTickets();
-    _prefillUserData();
+    _loadData();
+    _prefillUser();
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _subjectController.dispose();
     _phoneController.dispose();
-    _emailController.dispose();
-    _issueController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
-  void _prefillUserData() {
-    if (_currentUser != null) {
-      _nameController.text = _currentUser.displayName ?? '';
-      _emailController.text = _currentUser.email ?? '';
-      _phoneController.text = _currentUser.phoneNumber ?? '';
-      
-      AuthService().getUserRole(_currentUser.uid).then((role) {
-        if (mounted) {
-          setState(() {
-            _userRole = role;
-          });
-        }
-      });
+  void _prefillUser() {
+    final user = AuthService().currentUser;
+    if (user != null) {
+      if (user.phone != null) _phoneController.text = user.phone!;
     }
   }
 
-  void _fetchUserTickets() {
-    if (_currentUser == null) return;
-
-    _firestore
-        .collection('support_tickets')
-        .where('userId', isEqualTo: _currentUser.uid)
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .listen((snapshot) {
-      final List<Map<String, dynamic>> loadedTickets = [];
-      for (var doc in snapshot.docs) {
-        final ticket = doc.data();
-        if (ticket != null) {
-          ticket['id'] = doc.id;
-          loadedTickets.add(ticket);
-        }
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      // 1. Fetch contacts
+      final contactsRes = await _api.get(ApiConfig.contacts);
+      if (contactsRes.statusCode == 200 && contactsRes.data != null) {
+        final List cList = contactsRes.data is List ? contactsRes.data : (contactsRes.data['results'] ?? []);
+        _contacts = cList.map((e) => Map<String, dynamic>.from(e)).toList();
       }
 
-      if (mounted) {
-        setState(() {
-          _userTickets = loadedTickets;
-        });
+      // 2. Fetch FAQs
+      final faqsRes = await _api.get(ApiConfig.faqs);
+      if (faqsRes.statusCode == 200 && faqsRes.data != null) {
+        final List fList = faqsRes.data is List ? faqsRes.data : (faqsRes.data['results'] ?? []);
+        _faqs = fList.map((e) => Map<String, dynamic>.from(e)).toList();
       }
-    }, onError: (error) {
-      debugPrint("Error fetching tickets: $error");
-    });
+
+      // 3. Fetch tickets
+      final ticketsRes = await _api.get(ApiConfig.tickets);
+      if (ticketsRes.statusCode == 200 && ticketsRes.data != null) {
+        final List tList = ticketsRes.data is List ? ticketsRes.data : (ticketsRes.data['results'] ?? []);
+        _tickets = tList.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (_) {}
+
+    // Fallback emergency contacts if list is empty
+    if (_contacts.isEmpty) {
+      _contacts = [
+        {
+          "name": "IUB Transport Office Control Room",
+          "phone": "0300-6809094",
+          "whatsapp": "03006809094",
+          "role": "Chief Transport Officer",
+        },
+        {
+          "name": "Campus Security & Helpline",
+          "phone": "062-9250235",
+          "whatsapp": "",
+          "role": "24/7 Security Dispatch",
+        },
+      ];
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _launchCall(String phone) async {
+    final cleanPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    final uri = Uri.parse('tel:$cleanPhone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> _launchWhatsApp(String phone) async {
+    String clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (clean.startsWith('0')) {
+      clean = '92${clean.substring(1)}';
+    }
+    final uri = Uri.parse('https://wa.me/$clean?text=Assalam-o-Alaikum,%20I%20need%20assistance%20regarding%20IUB%20Bus%20Service.');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Future<void> _submitTicket() async {
-    if (_nameController.text.trim().isEmpty) {
-      _showToast("Please enter your name", Colors.orange);
+    final subject = _subjectController.text.trim();
+    final description = _descriptionController.text.trim();
+    final phone = _phoneController.text.trim();
+
+    if (subject.isEmpty) {
+      _showToast("Please enter a subject", Colors.orange);
       return;
     }
-
-    if (_phoneController.text.trim().isEmpty) {
-      _showToast("Please enter your phone number", Colors.orange);
+    if (description.isEmpty) {
+      _showToast("Please enter ticket description", Colors.orange);
       return;
     }
-
-    if (_issueController.text.trim().isEmpty) {
-      _showToast("Please describe your issue", Colors.orange);
-      return;
-    }
-
-    if (_currentUser == null) return;
 
     setState(() => _isSubmitting = true);
-
     try {
-      await _firestore.collection('support_tickets').add({
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'issue': _issueController.text.trim(),
-        'status': 'Pending',
-        'timestamp': FieldValue.serverTimestamp(),
-        'userEmail': _currentUser.email,
-        'userName': _currentUser.displayName ?? 'Anonymous',
-        'userRole': _userRole ?? 'Unknown',
-        'userId': _currentUser.uid,
-        'userRead': true,
-        'adminRead': false,
-      });
+      final res = await _api.post(
+        ApiConfig.tickets,
+        data: {
+          'subject': subject,
+          'description': description,
+          'contact_phone': phone,
+        },
+      );
 
-      _issueController.clear();
-      _showToast("Issue submitted successfully!", Colors.green);
-      
-      // Auto-switch to history tab to show the new ticket
-      setState(() => _activeTabIndex = 1);
-    } catch (e) {
-      _showToast("Error: $e", Colors.red);
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        _showToast("Ticket submitted successfully!", Colors.green);
+        _subjectController.clear();
+        _descriptionController.clear();
+        setState(() => _activeTabIndex = 2);
+        _loadData();
+      } else {
+        _showToast("Failed to submit ticket", Colors.red);
       }
+    } catch (e) {
+      _showToast("Submission error: $e", Colors.red);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  void _showToast(String message, Color color) {
-    if (!mounted) return;
+  void _showToast(String msg, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+        content: Text(msg, style: GoogleFonts.poppins(color: Colors.white)),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -154,529 +170,363 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: const CustomAppBar(
-        title: "HELP & SUPPORT",
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: CustomAppBar(
+        title: "Help & Support",
         showBackArrow: true,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildCustomHeader(context),
-            _buildTabSelector(),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
-                child: AnimatedCrossFade(
-                  firstChild: _buildIssueReporter(),
-                  secondChild: _buildTicketHistory(),
-                  crossFadeState: _activeTabIndex == 0
-                      ? CrossFadeState.showFirst
-                      : CrossFadeState.showSecond,
-                  duration: const Duration(milliseconds: 300),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomHeader(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.only(
-        top: 20,
-        bottom: 16,
-        left: 24,
-        right: 24,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "How can we\nhelp you today?",
-            style: GoogleFonts.poppins(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : AppColors.textDark,
-              height: 1.2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.primaryYellow : AppColors.primaryNavy,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabSelector() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isDark ? Colors.white10 : AppColors.borderLight),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildTabButton(0, "Submit Issue", Icons.edit_note_rounded),
-          ),
-          Expanded(
-            child: _buildTabButton(1, "My Tickets (${_userTickets.length})", Icons.history_rounded),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton(int index, String label, IconData icon) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSelected = _activeTabIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _activeTabIndex = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected 
-              ? (isDark ? AppColors.primaryYellow : AppColors.primaryNavy) 
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected 
-                  ? (isDark ? Colors.black : Colors.white) 
-                  : AppColors.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected 
-                    ? (isDark ? Colors.black : Colors.white) 
-                    : AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIssueReporter() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Theme.of(context).dividerColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInputLabel("Full Name"),
-          _buildTextField(_nameController, "Enter your name", Icons.person_outline_rounded),
-          const SizedBox(height: 24),
-          
-          _buildInputLabel("Email Address"),
-          _buildTextField(_emailController, "Enter your email", Icons.alternate_email_rounded, keyboardType: TextInputType.emailAddress),
-          const SizedBox(height: 24),
-          
-          _buildInputLabel("Phone Number"),
-          _buildTextField(_phoneController, "Enter your phone", Icons.phone_android_rounded, keyboardType: TextInputType.phone),
-          const SizedBox(height: 24),
-          
-          _buildInputLabel("Describe your issue"),
-          _buildTextField(_issueController, "Provide details about your problem...", Icons.chat_bubble_outline_rounded, maxLines: 4),
-          const SizedBox(height: 32),
-          
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _isSubmitting ? null : _submitTicket,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isDark ? AppColors.primaryYellow : AppColors.primaryNavy,
-                foregroundColor: isDark ? Colors.black : Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 2,
-                shadowColor: AppColors.primaryNavy.withValues(alpha: 0.3),
-              ),
-              child: _isSubmitting
-                  ? SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: isDark ? Colors.black : Colors.white, strokeWidth: 2.5))
-                  : Text(
-                      "Submit", 
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w800, 
-                        fontSize: 16,
-                        letterSpacing: 1,
-                      )
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTicketHistory() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (_userTickets.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.support_agent_rounded, size: 64, color: isDark ? Colors.white24 : AppColors.textSecondary.withValues(alpha: 0.3)),
-              const SizedBox(height: 16),
-              Text(
-                "No tickets submitted yet",
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "If you face any issues with your rides, submit a ticket and our support team will assist you.",
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: isDark ? Colors.white60 : AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: _userTickets.map((ticket) => _buildTicketCard(ticket)).toList(),
-    );
-  }
-
-  Widget _buildTicketCard(Map<String, dynamic> ticket) {
-    final String ticketId = ticket['id'] ?? '';
-    final bool isExpanded = _expandedTicketIds.contains(ticketId);
-    
-    final timestamp = ticket['timestamp'] as Timestamp?;
-    final date = timestamp != null 
-        ? DateFormat('MMM dd, hh:mm a').format(timestamp.toDate())
-        : 'Recently';
-    
-    final status = ticket['status'] ?? 'Pending';
-    final adminReply = ticket['adminReply'] as String?;
-    final bool userRead = ticket['userRead'] ?? true;
-    
-    Color statusColor = AppColors.primaryYellow;
-    if (status == 'Resolved') {
-      statusColor = Colors.green;
-    } else if (status == 'In Progress') {
-      statusColor = AppColors.primaryNavy;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.borderLight),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          key: PageStorageKey(ticketId),
-          initiallyExpanded: isExpanded,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              if (expanded) {
-                _expandedTicketIds.add(ticketId);
-                // Mark ticket as read when student views it
-                if (!userRead) {
-                  _firestore.collection('support_tickets').doc(ticketId).update({'userRead': true});
-                }
-              } else {
-                _expandedTicketIds.remove(ticketId);
-              }
-            });
-          },
-          tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: statusColor.withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          status.toUpperCase(),
-                          style: GoogleFonts.poppins(
-                            fontSize: 10, 
-                            fontWeight: FontWeight.w800, 
-                            color: statusColor,
-                            letterSpacing: 0.5
-                          ),
-                        ),
-                      ],
-                    ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryNavy))
+          : Column(
+              children: [
+                // Navigation Tabs
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      _buildTabButton("Quick Help", 0),
+                      const SizedBox(width: 8),
+                      _buildTabButton("Submit Ticket", 1),
+                      const SizedBox(width: 8),
+                      _buildTabButton("My Tickets (${_tickets.length})", 2),
+                    ],
                   ),
-                  if (!userRead) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              Text(
-                date, 
-                style: GoogleFonts.poppins(
-                  fontSize: 11, 
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                )
-              ),
-            ],
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Text(
-              ticket['issue'] ?? 'No description provided.',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: AppColors.textDark,
-                height: 1.5,
-              ),
-              maxLines: isExpanded ? 100 : 2,
-              overflow: isExpanded ? null : TextOverflow.ellipsis,
+                ),
+                const Divider(height: 1, color: AppColors.borderLight),
+
+                Expanded(
+                  child: _activeTabIndex == 0
+                      ? _buildQuickHelpView()
+                      : (_activeTabIndex == 1 ? _buildSubmitTicketView() : _buildTicketHistoryView()),
+                ),
+              ],
             ),
-          ),
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Divider(height: 1, color: AppColors.borderLight),
-                  const SizedBox(height: 16),
-                  
-                  _buildDetailRow("Filed by", ticket['name'] ?? ''),
-                  const SizedBox(height: 8),
-                  _buildDetailRow("Phone", ticket['phone'] ?? ''),
-                  const SizedBox(height: 8),
-                  _buildDetailRow("Email", ticket['email'] ?? ''),
-                  const SizedBox(height: 16),
-                  
-                  if (adminReply != null && adminReply.trim().isNotEmpty) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.borderLight),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.support_agent_rounded, size: 16, color: AppColors.primaryNavy),
-                              const SizedBox(width: 8),
-                              Text(
-                                "ADMIN RESOLUTION",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primaryNavy,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            adminReply,
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              color: AppColors.textDark,
-                              height: 1.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFFBEB),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amber.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.hourglass_empty_rounded, size: 16, color: Colors.amber.shade700),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              status == 'In Progress' 
-                                  ? "Support team is investigating your issue."
-                                  : "Waiting for admin review.",
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.amber.shade800,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Spacer(flex: 0), // Dummy space holder to trigger layout refresh context
-        SizedBox(
-          width: 80,
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white60 : AppColors.textSecondary,
-            ),
+  Widget _buildTabButton(String title, int index) {
+    final isSelected = _activeTabIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _activeTabIndex = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primaryNavy : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
           ),
-        ),
-        Expanded(
+          alignment: Alignment.center,
           child: Text(
-            value,
+            title,
             style: GoogleFonts.poppins(
               fontSize: 12,
-              color: isDark ? Colors.white : AppColors.textDark,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : Colors.grey.shade700,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickHelpView() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Contact Cards Header
+        Text(
+          "IUB TRANSPORT HELPLINES",
+          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade600, letterSpacing: 0.8),
+        ),
+        const SizedBox(height: 10),
+
+        for (final contact in _contacts) _buildContactCard(contact),
+
+        const SizedBox(height: 24),
+        Text(
+          "FREQUENTLY ASKED QUESTIONS",
+          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade600, letterSpacing: 0.8),
+        ),
+        const SizedBox(height: 10),
+
+        if (_faqs.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+            child: Text(
+              "How to track buses?\nSelect your route or stop from the Dashboard. Live moving buses appear automatically.\n\nWhat are 'Last Bus' badges?\nWhen remaining buses in the slot drop to 0, the last running bus is flagged to warn students.",
+              style: GoogleFonts.poppins(fontSize: 13, height: 1.5, color: const Color(0xFF334155)),
+            ),
+          )
+        else
+          for (final faq in _faqs)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              child: ExpansionTile(
+                title: Text(faq['question'] ?? 'FAQ', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text(faq['answer'] ?? '', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade700, height: 1.4)),
+                  ),
+                ],
+              ),
+            ),
+      ],
+    );
+  }
+
+  Widget _buildContactCard(Map<String, dynamic> contact) {
+    final name = contact['name'] ?? 'Transport Support';
+    final role = contact['role'] ?? 'Coordinator';
+    final phone = contact['phone'] ?? '0300-6809094';
+    final whatsapp = contact['whatsapp'] ?? contact['phone'] ?? '03006809094';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryNavy.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.support_agent_rounded, color: AppColors.primaryNavy, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    Text(role, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              // Direct Call button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _launchCall(phone),
+                  icon: const Icon(Icons.call_rounded, size: 16, color: Colors.white),
+                  label: Text("Call $phone", style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryNavy,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // WhatsApp Complaint button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _launchWhatsApp(whatsapp),
+                  icon: const Icon(Icons.chat_bubble_rounded, size: 16, color: Colors.white),
+                  label: Text("WhatsApp", style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubmitTicketView() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Submit Support Ticket", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+              const SizedBox(height: 6),
+              Text("Have an issue with a bus, driver, or timing? Submit a ticket and our transport admin will address it.", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
+              const SizedBox(height: 20),
+
+              Text("Subject", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _subjectController,
+                decoration: InputDecoration(
+                  hintText: "e.g. Bus 12 skipped Saddar Pully stop",
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              Text("Contact Phone", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  hintText: "0300-1234567",
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              Text("Description", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: "Provide details about date, time, bus number, and issue...",
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitTicket,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryNavy,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isSubmitting
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text("Submit Ticket", style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildInputLabel(String label) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.only(left: 2, bottom: 10),
-      child: Text(
-        label,
-        style: GoogleFonts.poppins(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: isDark ? Colors.white70 : AppColors.textDark,
+  Widget _buildTicketHistoryView() {
+    if (_tickets.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.confirmation_number_outlined, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            Text("No tickets submitted yet", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade600)),
+          ],
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hint,
-    IconData icon, {
-    int maxLines = 1,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      style: GoogleFonts.poppins(fontSize: 14, color: isDark ? Colors.white : AppColors.textDark),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: GoogleFonts.poppins(color: isDark ? Colors.white30 : AppColors.textSecondary.withValues(alpha: 0.5), fontSize: 13),
-        prefixIcon: Icon(icon, size: 20, color: isDark ? AppColors.primaryYellow : AppColors.primaryNavy),
-        filled: true,
-        fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: isDark ? Colors.white10 : AppColors.borderLight),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: isDark ? AppColors.primaryYellow : AppColors.primaryNavy, width: 1.5),
-        ),
-        contentPadding: const EdgeInsets.all(18),
-      ),
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _tickets.length,
+      itemBuilder: (context, index) {
+        final ticket = _tickets[index];
+        final status = (ticket['status'] ?? 'pending').toString().toLowerCase();
+        Color statusColor = Colors.orange;
+        if (status == 'resolved' || status == 'closed') statusColor = Colors.green;
+        if (status == 'in_progress') statusColor = Colors.blue;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      ticket['subject'] ?? 'Support Ticket',
+                      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                    child: Text(
+                      status.toUpperCase(),
+                      style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                ticket['description'] ?? '',
+                style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade700, height: 1.4),
+              ),
+              if (ticket['admin_response'] != null && ticket['admin_response'].toString().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.reply_rounded, size: 16, color: AppColors.primaryNavy),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Admin: ${ticket['admin_response']}",
+                          style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF1E293B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

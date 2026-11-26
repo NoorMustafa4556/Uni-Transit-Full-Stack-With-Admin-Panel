@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uni_transit/Core/Constants/AppColors.dart';
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
 
 class SosReviewBottomSheet extends StatefulWidget {
   final String notificationId;
@@ -31,135 +32,100 @@ class _SosReviewBottomSheetState extends State<SosReviewBottomSheet> {
   }
 
   Future<void> _submitReview() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
-    setState(() {
-      _isSubmitting = true;
-    });
+    setState(() => _isSubmitting = true);
 
     try {
-      final client = Supabase.instance.client;
-      // 1. Fetch user role (Student or Driver) from public.profiles
-      final profile = await client.from('profiles').select().eq('id', user.id).maybeSingle();
-      final String userRole = profile?['role'] ?? 'Student';
-      final String displayName = profile?['name'] ?? user.email ?? 'Anonymous';
-
-      // 2. Save review to Supabase
-      try {
-        await client.from('sos_reviews').insert({
-          'alert_id': widget.alertId,
-          'user_id': user.id,
-          'user_name': displayName,
-          'user_role': userRole,
-          'rating': _rating,
-          'review': _commentController.text.trim(),
-          'alert_message': widget.alertMessage,
-        });
-      } catch (e) {
-        debugPrint("SOS Review table insert failed: $e (This is fine if table does not exist)");
+      final alertIdInt = int.tryParse(widget.alertId);
+      if (alertIdInt != null) {
+        await ApiClient().post(
+          ApiConfig.sosReview(alertIdInt),
+          data: {
+            'rating': _rating,
+            'review': _commentController.text.trim(),
+          },
+        );
       }
-
-      // 3. Mark notification as reviewed in notifications table
-      await client.from('notifications').update({
-        'is_reviewed': true,
-      }).eq('id', widget.notificationId);
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Thank you for your feedback!'),
+            content: Text("Thank you! Your feedback has been submitted."),
             backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } catch (e) {
-      debugPrint("Error submitting SOS review: $e");
-    } finally {
       if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
+        Navigator.pop(context);
       }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: EdgeInsets.only(
+        top: 24,
+        left: 24,
+        right: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              const Icon(Icons.rate_review_rounded, color: AppColors.primaryNavy),
+              const SizedBox(width: 8),
               Text(
-                "Rate Emergency Help",
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryNavy,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => Navigator.pop(context),
+                "Rate Emergency Resolution",
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryNavy),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Text(
-            "An administrator resolved your SOS request. Please rate the assistance you received:",
-            style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600]),
+            "Alert: \"${widget.alertMessage}\"",
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
           ),
-          const SizedBox(height: 24),
-          Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(5, (index) {
-                final starVal = index + 1;
-                return IconButton(
-                  icon: Icon(
-                    starVal <= _rating ? Icons.star_rounded : Icons.star_outline_rounded,
-                    color: Colors.amber[600],
-                    size: 40,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _rating = starVal;
-                    });
-                  },
-                );
-              }),
-            ),
+          const SizedBox(height: 16),
+          Text("How satisfied are you with the response?", style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(5, (index) {
+              final star = index + 1;
+              return IconButton(
+                icon: Icon(
+                  star <= _rating ? Icons.star_rounded : Icons.star_border_rounded,
+                  color: Colors.amber,
+                  size: 36,
+                ),
+                onPressed: () => setState(() => _rating = star),
+              );
+            }),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           TextField(
             controller: _commentController,
             maxLines: 3,
             decoration: InputDecoration(
-              hintText: "Tell us about your experience (optional)...",
-              hintStyle: GoogleFonts.poppins(fontSize: 13, color: Colors.grey),
+              hintText: "Add any comments or suggestions...",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[200]!),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[200]!),
-              ),
+              fillColor: const Color(0xFFF8FAFC),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -167,12 +133,11 @@ class _SosReviewBottomSheetState extends State<SosReviewBottomSheet> {
               onPressed: _isSubmitting ? null : _submitReview,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryNavy,
-                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: _isSubmitting
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : Text("Submit Feedback", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                  : Text("Submit Review", style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
             ),
           ),
         ],

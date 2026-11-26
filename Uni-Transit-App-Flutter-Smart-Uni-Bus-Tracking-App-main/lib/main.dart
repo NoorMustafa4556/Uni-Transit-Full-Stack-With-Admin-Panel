@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uni_transit/Services/NotificationService.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,13 +25,6 @@ void main() async {
       statusBarIconBrightness: Brightness.dark,
     ));
 
-    await Supabase.initialize(
-      url: 'https://eplzrubpbqsdmezvkjgz.supabase.co',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwbHpydWJwYnFzZG1lenZramd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNDgxMjQsImV4cCI6MjEwMDcyNDEyNH0.l633BESZHDigcg9ViA_tmhkFdcxoACoKmcBRRbuyS8w',
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-      ),
-    );
     final sharedPreferences = await SharedPreferences.getInstance();
     await NotificationService.init();
 

@@ -3,26 +3,27 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
 import 'package:uni_transit/Services/LocationService.dart';
 import 'package:uni_transit/Services/RoutingService.dart';
 import 'package:uni_transit/Services/NotificationService.dart';
 import 'package:uni_transit/Core/Util/Logger.dart';
 import 'package:uni_transit/Core/Constants/CampusLocations.dart';
-import 'package:uni_transit/Services/TripAlertService.dart';
 import 'package:uni_transit/Core/Constants/CustomRoutes.dart';
 import 'package:uni_transit/Models/EtaInfo.dart';
-import 'package:uni_transit/ViewModels/AuthProvider.dart';
 
 class DriverTripState {
   final bool isTripStarted;
-  final String? activeTripId;
+  final int? activeTripId;
   final String busNumber;
   final String plateNumber;
   final String? from;
   final String? to;
   final String gender;
-  final String departureTime;   // e.g. "07:30 AM" — shown on dashboard
-  final String scheduleId;       // ⚡ Added scheduleId
+  final String departureTime;
+  final String scheduleId;
+  final String crowdStatus; // 'seats_available', 'standing', 'full'
   final List<LatLng> routePoints;
   final String remainingDistance;
   final String remainingTime;
@@ -42,6 +43,7 @@ class DriverTripState {
     this.gender = "Combined",
     this.departureTime = "",
     this.scheduleId = "",
+    this.crowdStatus = "seats_available",
     this.routePoints = const [],
     this.remainingDistance = "---",
     this.remainingTime = "---",
@@ -54,7 +56,7 @@ class DriverTripState {
 
   DriverTripState copyWith({
     bool? isTripStarted,
-    String? activeTripId,
+    int? activeTripId,
     String? busNumber,
     String? plateNumber,
     String? from,
@@ -62,6 +64,7 @@ class DriverTripState {
     String? gender,
     String? departureTime,
     String? scheduleId,
+    String? crowdStatus,
     List<LatLng>? routePoints,
     String? remainingDistance,
     String? remainingTime,
@@ -81,6 +84,7 @@ class DriverTripState {
       gender: gender ?? this.gender,
       departureTime: departureTime ?? this.departureTime,
       scheduleId: scheduleId ?? this.scheduleId,
+      crowdStatus: crowdStatus ?? this.crowdStatus,
       routePoints: routePoints ?? this.routePoints,
       remainingDistance: remainingDistance ?? this.remainingDistance,
       remainingTime: remainingTime ?? this.remainingTime,
@@ -95,22 +99,12 @@ class DriverTripState {
 
 class DriverTripNotifier extends Notifier<DriverTripState> {
   final LocationService _locationService = LocationService();
-  StreamSubscription? _busStatusSubscription;
-
-  // Throttle navigation refresh to avoid excessive API calls
+  final ApiClient _api = ApiClient();
   DateTime _lastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   static const _refreshInterval = Duration(seconds: 15);
 
   @override
   DriverTripState build() {
-    final authState = ref.watch(authStateProvider);
-    if (authState.value == null) {
-      _busStatusSubscription?.cancel();
-      _busStatusSubscription = null;
-    }
-    ref.onDispose(() {
-      _busStatusSubscription?.cancel();
-    });
     return DriverTripState();
   }
 
@@ -120,80 +114,19 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
       heading: heading,
       speed: speed,
     );
-    if (state.isTripStarted) {
-      // Throttle navigation refresh to every 15 seconds
+    if (state.isTripStarted && state.activeTripId != null) {
       final now = DateTime.now();
       if (now.difference(_lastRefresh) > _refreshInterval) {
         _lastRefresh = now;
         _refreshNavigation();
       }
-      // Always update tracking position with latest ETA data
-      _locationService.updateTracking(
-        state.busNumber,
-        loc.latitude,
-        loc.longitude,
-        heading,
-        speed: speed,
-        remainingTime: state.remainingTime,
-        remainingDistance: state.remainingDistance,
-        arrivalTime:
-            state.remainingTime != "---"
-                ? _calculateClockTime(state.remainingTime)
-                : "Calculating...",
+      _locationService.updateDriverLocation(
+        tripId: state.activeTripId!,
+        lat: loc.latitude,
+        lng: loc.longitude,
+        speedKmh: speed,
+        heading: heading,
       );
-    }
-  }
-
-  void _startListeningToBusStatus() {
-    _busStatusSubscription?.cancel();
-    _busStatusSubscription = _locationService.activeBusesStream.listen((event) {
-      final busExists = event.any((b) => b['bus_number'] == state.busNumber);
-      if (!busExists && state.isTripStarted) {
-        forceStopFromAdmin();
-      }
-    });
-  }
-
-  void forceStopFromAdmin() {
-    _busStatusSubscription?.cancel();
-    _busStatusSubscription = null;
-
-    state = state.copyWith(
-      isTripStarted: false,
-      activeTripId: null,
-      busNumber: "", // Clear bus info
-      plateNumber: "",
-      from: null, // Reset hubs
-      to: null,
-      scheduleId: "", // Clear schedule ID
-      routePoints: [], // Clear map path
-      remainingDistance: "---", // Reset indicators
-      remainingTime: "---",
-    );
-
-    NotificationService.show(
-      title: "Trip Terminated 🛑",
-      message: "Your active trip tracking has been stopped by the administrator.",
-      type: NotificationType.warning,
-    );
-  }
-
-  String _calculateClockTime(String remainingStr) {
-    try {
-      int minutes = 0;
-      if (remainingStr.contains('h')) {
-        final parts = remainingStr.split('h');
-        final hours = int.parse(parts[0].trim());
-        final minsStr = parts[1].replaceAll('m', '').trim();
-        final mins = minsStr.isNotEmpty ? int.parse(minsStr) : 0;
-        minutes = (hours * 60) + mins;
-      } else {
-        minutes = int.parse(remainingStr.split(' ')[0]);
-      }
-      final arrival = DateTime.now().add(Duration(minutes: minutes));
-      return DateFormat('hh:mm a').format(arrival);
-    } catch (e) {
-      return "Calculating...";
     }
   }
 
@@ -206,7 +139,6 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
     String? departureTime,
     String? scheduleId,
   }) {
-    // Sanitize: ignore literal 'null' strings or empty from/to
     final safeFrom = (from != null && from.trim().isNotEmpty && from.trim().toLowerCase() != 'null')
         ? from.trim()
         : state.from;
@@ -231,39 +163,77 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
     }
   }
 
+  Future<void> updateCrowdStatus(String status) async {
+    state = state.copyWith(crowdStatus: status);
+    if (state.isTripStarted && state.activeTripId != null) {
+      try {
+        await _api.patch(
+          ApiConfig.driverTripCrowdStatus(state.activeTripId!),
+          data: {'crowd_status': status},
+        );
+        NotificationService.show(
+          title: "Crowd Status Updated",
+          message: "Bus crowd status set to: ${status.replaceAll('_', ' ').toUpperCase()}",
+          type: NotificationType.info,
+        );
+      } catch (e) {
+        AppLogger.error("Failed to update crowd status: $e");
+      }
+    }
+  }
+
+  Future<void> reportAlert(String alertType, String message) async {
+    if (state.isTripStarted && state.activeTripId != null) {
+      try {
+        await _api.post(
+          ApiConfig.driverTripAlert(state.activeTripId!),
+          data: {
+            'alert_type': alertType,
+            'message': message,
+          },
+        );
+        NotificationService.show(
+          title: "Alert Reported",
+          message: "Reported: $message",
+          type: NotificationType.warning,
+        );
+      } catch (e) {
+        NotificationService.show(
+          title: "Error",
+          message: "Failed to submit alert: $e",
+          type: NotificationType.error,
+        );
+      }
+    }
+  }
+
   Future<void> restoreActiveTrip(String uid) async {
     state = state.copyWith(isLoading: true);
     try {
-      final activeTrip = await _locationService.getActiveTrip(uid);
-      if (activeTrip != null) {
+      final res = await _api.get(ApiConfig.driverActiveTrip);
+      if (res.statusCode == 200 && res.data != null && res.data['active'] == true) {
+        final trip = res.data['trip'];
+        final tripId = trip['id'] as int;
         state = state.copyWith(
           isTripStarted: true,
-          activeTripId: activeTrip['trip_id'],
-          busNumber: activeTrip['bus_number'],
-          plateNumber: activeTrip['plate_number'],
-          from: activeTrip['from_hub'],
-          to: activeTrip['to_hub'],
-          gender: activeTrip['gender'],
-          scheduleId: activeTrip['schedule_id'] ?? '',
+          activeTripId: tripId,
+          busNumber: trip['bus']?['bus_number'] ?? 'Bus',
+          plateNumber: trip['bus']?['plate_number'] ?? '',
+          from: trip['route']?['start_hub']?['name'] ?? 'Abbasia Campus',
+          to: trip['route']?['end_hub']?['name'] ?? 'Baghdad Campus',
+          crowdStatus: trip['crowd_status'] ?? 'seats_available',
         );
-        // Fixed: now passes uid so restoreTracking can re-create active bus entry
-        await _locationService.restoreTracking(uid, state.busNumber);
         await _refreshNavigation();
-        _startListeningToBusStatus();
       }
     } catch (e) {
       AppLogger.error("Restore failed: $e");
     } finally {
-      state = state.copyWith(
-        isLoading: false,
-        hasRestored: true,
-      );
+      state = state.copyWith(isLoading: false, hasRestored: true);
     }
   }
 
   Future<void> _refreshNavigation() async {
     if (state.from == null || state.to == null) return;
-
     final routeName = "${state.from} ➔ ${state.to}";
     final manualPoints = CustomRoutes.getRoutePoints(routeName);
 
@@ -271,9 +241,8 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
     final target = _getHubCoord(state.to!);
     if (target == null) return;
 
-    // Use Start Hub coordinates if trip has not started yet, otherwise use current live location.
-    final origin = state.isTripStarted 
-        ? state.currentLocation 
+    final origin = state.isTripStarted
+        ? state.currentLocation
         : (startHubCoord ?? state.currentLocation);
 
     final fallbackEta = EtaInfo.estimateFromCoordinates(origin, target);
@@ -281,33 +250,22 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
     final fallbackTime = fallbackEta.etaDisplay;
 
     if (manualPoints.isNotEmpty && manualPoints.length > 2) {
-      // ⚡ PROFESSIONAL: Use manual points for the map path
-      final routeData = await RoutingService.getFullRoute([
-        origin,
-        target,
-      ]);
+      final routeData = await RoutingService.getFullRoute([origin, target]);
       state = state.copyWith(
         routePoints: manualPoints,
-        remainingDistance:
-            routeData != null
-                ? "${(routeData.distanceMeters / 1000).toStringAsFixed(1)} KM"
-                : (state.remainingDistance != "---" ? state.remainingDistance : fallbackDistance),
-        remainingTime:
-            routeData != null
-                ? "${(routeData.durationSeconds / 60).ceil()} MIN"
-                : (state.remainingTime != "---" ? state.remainingTime : fallbackTime),
+        remainingDistance: routeData != null
+            ? "${(routeData.distanceMeters / 1000).toStringAsFixed(1)} KM"
+            : (state.remainingDistance != "---" ? state.remainingDistance : fallbackDistance),
+        remainingTime: routeData != null
+            ? "${(routeData.durationSeconds / 60).ceil()} MIN"
+            : (state.remainingTime != "---" ? state.remainingTime : fallbackTime),
       );
     } else {
-      // Fallback to OSRM if no manual points are defined
-      final routeData = await RoutingService.getFullRoute([
-        origin,
-        target,
-      ]);
+      final routeData = await RoutingService.getFullRoute([origin, target]);
       if (routeData != null) {
         state = state.copyWith(
           routePoints: routeData.points,
-          remainingDistance:
-              "${(routeData.distanceMeters / 1000).toStringAsFixed(1)} KM",
+          remainingDistance: "${(routeData.distanceMeters / 1000).toStringAsFixed(1)} KM",
           remainingTime: "${(routeData.durationSeconds / 60).ceil()} MIN",
         );
       } else {
@@ -317,32 +275,14 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
         );
       }
     }
-
-    // ⚡ UPDATE SUPABASE: Push the freshly calculated remainingTime, remainingDistance and arrivalTime
-    if (state.isTripStarted) {
-      final arrivalTime = state.remainingTime != "---" && state.remainingTime != "Calculating..."
-          ? _calculateClockTime(state.remainingTime)
-          : "Calculating...";
-      await _locationService.updateTracking(
-        state.busNumber,
-        state.currentLocation.latitude,
-        state.currentLocation.longitude,
-        state.heading,
-        speed: state.speed,
-        remainingTime: state.remainingTime,
-        remainingDistance: state.remainingDistance,
-        arrivalTime: arrivalTime,
-      );
-    }
   }
 
   Future<void> toggleTrip(String uid, String driverName) async {
     if (!state.isTripStarted) {
-      if (state.from == null || state.to == null) return;
       if (state.busNumber.trim().isEmpty) {
         NotificationService.show(
           title: "Missing Info",
-          message: "Please enter a Bus ID before starting.",
+          message: "Please enter or select a Bus before starting.",
           type: NotificationType.warning,
         );
         return;
@@ -351,72 +291,47 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
         final pos = await Geolocator.getCurrentPosition();
         final nowFormatted = DateFormat('hh:mm a').format(DateTime.now());
 
-        String initialTime = "---";
-        String initialDistance = "---";
-        String initialArrival = "Arrival Pending";
-        
-        final startLatLng = LatLng(pos.latitude, pos.longitude);
-        final targetHubCoord = _getHubCoord(state.to!);
-        if (targetHubCoord != null) {
-          final initialEta = EtaInfo.estimateFromCoordinates(startLatLng, targetHubCoord);
-          initialTime = initialEta.etaDisplay;
-          initialDistance = initialEta.distanceDisplay;
-          try {
-            int minutes = 0;
-            if (initialTime.contains('h')) {
-              final parts = initialTime.split('h');
-              final hours = int.parse(parts[0].trim());
-              final minsStr = parts[1].replaceAll('m', '').trim();
-              final mins = minsStr.isNotEmpty ? int.parse(minsStr) : 0;
-              minutes = (hours * 60) + mins;
-            } else {
-              minutes = int.parse(initialTime.split(' ')[0]);
-            }
-            final arrival = DateTime.now().add(Duration(minutes: minutes));
-            initialArrival = DateFormat('hh:mm a').format(arrival);
-          } catch (_) {}
+        // Call Django backend to start trip
+        final startRes = await _api.post(
+          ApiConfig.driverTripStart,
+          data: {
+            'bus_number': state.busNumber,
+            'from_hub': state.from ?? 'Abbasia Campus',
+            'to_hub': state.to ?? 'Baghdad-ul-Jadeed Campus',
+            'gender': state.gender,
+          },
+        );
+
+        int tripId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        if (startRes.statusCode == 201 && startRes.data != null) {
+          tripId = startRes.data['id'] ?? tripId;
         }
 
         await _locationService.startSharingLocation(
           uid,
           state.busNumber,
-          from: state.from!,
-          to: state.to!,
+          from: state.from ?? 'Abbasia Campus',
+          to: state.to ?? 'Baghdad-ul-Jadeed Campus',
           gender: state.gender,
           driverName: driverName,
           departureTime: nowFormatted,
-          arrivalTime: initialArrival,
+          arrivalTime: "Calculating...",
           plateNumber: state.plateNumber,
           lat: pos.latitude,
           lng: pos.longitude,
-          remainingTime: initialTime,
-          remainingDistance: initialDistance,
-          scheduleId: state.scheduleId,
+          activeTripId: tripId,
         );
 
-        final activeTrip = await _locationService.getActiveTrip(uid);
         state = state.copyWith(
           isTripStarted: true,
-          activeTripId: activeTrip?['trip_id'],
-          remainingTime: initialTime,
-          remainingDistance: initialDistance,
-        );
-
-        // ⚡ Publish trip alert
-        await TripAlertService().publishTripStart(
-          busId: state.busNumber,
-          from: state.from!,
-          to: state.to!,
-          driverName: driverName,
+          activeTripId: tripId,
         );
 
         await _refreshNavigation();
-        _startListeningToBusStatus();
 
         NotificationService.show(
           title: "Trip Started",
-          message:
-              "You are now live-tracking from ${state.from} to ${state.to}.",
+          message: "You are now live-tracking from ${state.from} to ${state.to}.",
           type: NotificationType.success,
         );
       } catch (e) {
@@ -427,39 +342,19 @@ class DriverTripNotifier extends Notifier<DriverTripState> {
         );
       }
     } else {
-      final oldBusNumber = state.busNumber;
-      final oldFrom = state.from ?? "Unknown Origin";
-      final oldTo = state.to ?? "Unknown Destination";
       final oldTripId = state.activeTripId;
-
-      _busStatusSubscription?.cancel();
-      _busStatusSubscription = null;
-      if (oldTripId != null) {
-        await _locationService.stopSharingLocation(
-          uid,
-          oldBusNumber,
-          oldTripId,
-        );
-      }
-
-      // ⚡ Publish trip completion alert
-      await TripAlertService().publishTripEnd(
-        busId: oldBusNumber,
-        from: oldFrom,
-        to: oldTo,
-        driverName: driverName,
-      );
+      await _locationService.stopSharingLocation(state.busNumber, activeTripId: oldTripId);
 
       state = state.copyWith(
         isTripStarted: false,
         activeTripId: null,
-        busNumber: "", // Clear bus info
+        busNumber: "",
         plateNumber: "",
-        from: null, // Reset hubs
+        from: null,
         to: null,
-        scheduleId: "", // Clear schedule ID
-        routePoints: [], // Clear map path
-        remainingDistance: "---", // Reset indicators
+        scheduleId: "",
+        routePoints: [],
+        remainingDistance: "---",
         remainingTime: "---",
       );
 
@@ -485,9 +380,13 @@ final driverTripProvider =
       () => DriverTripNotifier(),
     );
 
-final driverTripHistoryProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final user = authState.value;
-  if (user == null) return Stream.value([]);
-  return LocationService().getTripHistoryStream(user.id);
+final driverTripHistoryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  try {
+    final res = await ApiClient().get(ApiConfig.driverTripHistory);
+    if (res.statusCode == 200 && res.data != null) {
+      final List list = res.data is List ? res.data : (res.data['results'] ?? []);
+      return list.map((item) => Map<String, dynamic>.from(item)).toList();
+    }
+  } catch (_) {}
+  return [];
 });

@@ -105,7 +105,7 @@ class AboutScreen extends ConsumerWidget {
                   context: context,
                   title: appInfo.visionHeader.isEmpty ? "PROJECT VISION" : appInfo.visionHeader.toUpperCase(),
                   content: appInfo.vision.isEmpty 
-                    ? "UniTransit is a state-of-the-art solution designed for The Islamia University of Bahawalpur to digitize the bus tracking experience. It leverages real-time GPS data, Firebase synchronization, and smart routing algorithms to ensure students never miss their commute."
+                    ? "UniTransit is a state-of-the-art solution designed for The Islamia University of Bahawalpur to digitize the bus tracking experience. It leverages real-time GPS data, Django WebSockets synchronization, and smart routing algorithms to ensure students never miss their commute."
                     : appInfo.vision,
                 ),
                 

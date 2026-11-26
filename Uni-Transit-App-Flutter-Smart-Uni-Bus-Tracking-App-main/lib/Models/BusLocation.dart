@@ -1,4 +1,4 @@
-/// Model representing a live bus location broadcast via Firebase RTDB.
+/// Model representing a live bus location broadcast via Django WebSockets.
 /// This provides type-safe access to bus tracking data instead of raw Maps.
 class BusLocation {
   final String busNumber;
@@ -35,7 +35,7 @@ class BusLocation {
     this.lastUpdated = 0,
   });
 
-  /// Creates a BusLocation from a Firebase RTDB snapshot map.
+  /// Creates a BusLocation from a WebSocket / API map.
   /// Backward-compatible: handles missing fields gracefully with defaults.
   factory BusLocation.fromMap(String busId, Map<dynamic, dynamic> map) {
     return BusLocation(
@@ -57,7 +57,7 @@ class BusLocation {
     );
   }
 
-  /// Converts to Map for Firebase RTDB writes.
+  /// Converts to Map for API writes.
   Map<String, dynamic> toMap() {
     return {
       'driverId': driverId,

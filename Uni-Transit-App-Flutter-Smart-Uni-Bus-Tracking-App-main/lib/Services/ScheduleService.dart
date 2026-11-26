@@ -1,49 +1,101 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
+import 'package:uni_transit/Core/Util/Logger.dart';
 import 'package:uni_transit/Models/BusSchedule.dart';
 
-Map<String, dynamic> _toSnakeCase(Map<String, dynamic> map) {
-  final Map<String, dynamic> result = {};
-  map.forEach((key, value) {
-    final snakeKey = key.replaceAllMapped(RegExp(r'[A-Z]'), (match) => '_${match.group(0)!.toLowerCase()}');
-    result[snakeKey] = value;
-  });
-  return result;
-}
+class SlotCounterModel {
+  final int totalBuses;
+  final int dispatchedCount;
+  final int remainingCount;
+  final bool isLastBus;
 
-Map<String, dynamic> _toCamelCase(Map<String, dynamic> map) {
-  final Map<String, dynamic> result = {};
-  map.forEach((key, value) {
-    final camelKey = key.replaceAllMapped(RegExp(r'_([a-z])'), (match) => match.group(1)!.toUpperCase());
-    result[camelKey] = value;
+  SlotCounterModel({
+    required this.totalBuses,
+    required this.dispatchedCount,
+    required this.remainingCount,
+    required this.isLastBus,
   });
-  return result;
+
+  factory SlotCounterModel.fromMap(Map<String, dynamic> map) {
+    return SlotCounterModel(
+      totalBuses: map['total_buses'] ?? 1,
+      dispatchedCount: map['dispatched_count'] ?? 0,
+      remainingCount: map['remaining_count'] ?? 1,
+      isLastBus: map['is_last_bus'] ?? false,
+    );
+  }
 }
 
 class ScheduleService {
-  final _client = Supabase.instance.client;
+  final ApiClient _api = ApiClient();
 
-  // Add a new Schedule (Admin/Driver)
-  Future<void> addSchedule(BusSchedule schedule) async {
+  // Fetch active slots from Django REST backend
+  Future<List<Map<String, dynamic>>> getActiveSlots({
+    int? routeId,
+    String? shift,
+    String? dayType,
+    String? gender,
+    String? tag,
+  }) async {
     try {
-      final data = _toSnakeCase(schedule.toMap());
-      data.remove('id');
-      await _client.from('schedules').insert(data);
+      final Map<String, dynamic> query = {};
+      if (routeId != null) query['route_id'] = routeId;
+      if (shift != null) query['shift'] = shift;
+      if (dayType != null) query['day_type'] = dayType;
+      if (gender != null) query['gender'] = gender;
+      if (tag != null) query['tag'] = tag;
+
+      final response = await _api.get(ApiConfig.activeSlots, queryParameters: query);
+      if (response.statusCode == 200 && response.data != null) {
+        final List list = response.data is List ? response.data : (response.data['results'] ?? []);
+        return list.map((item) => Map<String, dynamic>.from(item)).toList();
+      }
     } catch (e) {
-      throw Exception("Failed to add schedule: $e");
+      AppLogger.error("Failed to load active slots: $e");
+    }
+    return [];
+  }
+
+  // Fetch active schedule profiles
+  Future<List<Map<String, dynamic>>> getScheduleProfiles() async {
+    try {
+      final response = await _api.get(ApiConfig.scheduleProfiles);
+      if (response.statusCode == 200 && response.data != null) {
+        final List list = response.data is List ? response.data : (response.data['results'] ?? []);
+        return list.map((item) => Map<String, dynamic>.from(item)).toList();
+      }
+    } catch (e) {
+      AppLogger.error("Failed to load schedule profiles: $e");
+    }
+    return [];
+  }
+
+  // Stream of BusSchedule for backward-compatibility with existing views
+  Stream<List<BusSchedule>> getSchedules() async* {
+    try {
+      final slots = await getActiveSlots();
+      final schedules = slots.map((s) {
+        final routeObj = s['route'] as Map<String, dynamic>?;
+        final routeTitle = routeObj != null ? (routeObj['title'] ?? '') : (s['route_title'] ?? '');
+        return BusSchedule(
+          id: s['id'].toString(),
+          busNumber: s['assigned_bus']?['bus_number'] ?? 'Bus ${s['id']}',
+          route: routeTitle,
+          departureTime: s['departure_time'] ?? '',
+          stops: (routeObj?['stops'] as List? ?? []).map((e) => e['name'].toString()).toList(),
+          type: s['gender_type'] ?? 'Combined',
+          operatingDays: [s['day_type'] ?? 'Everyday'],
+          date: DateTime.now().toIso8601String().split('T').first,
+        );
+      }).toList();
+      yield schedules;
+    } catch (_) {
+      yield [];
     }
   }
 
-  // Get Stream of Schedules (For Real-time updates)
-  Stream<List<BusSchedule>> getSchedules() {
-    return _client.from('schedules').stream(primaryKey: ['id']).map((event) {
-      return event.map((row) {
-        return BusSchedule.fromMap(row['id'].toString(), _toCamelCase(row));
-      }).toList();
-    });
-  }
-
-  // Delete Schedule
-  Future<void> deleteSchedule(String id) async {
-    await _client.from('schedules').delete().eq('id', id);
-  }
+  // Add / Delete compatibility stubs
+  Future<void> addSchedule(BusSchedule schedule) async {}
+  Future<void> deleteSchedule(String id) async {}
 }

@@ -72,7 +72,7 @@ class AppRoutes {
       blockedDriver: (context) => const BlockedDriverScreen(),
       blockedStudent: (context) => const BlockedStudentScreen(),
       studentDashboard: (context) => const StudentDashboard(),
-      adminDashboard: (context) => const AdminDashboardScreen(),
+      adminDashboard: (context) => const AdminDashboard(),
       addSchedule: (context) => const AddScheduleScreen(),
       tripHistory: (context) => const TripHistoryScreen(),
       support: (context) => const HelpSupportScreen(),

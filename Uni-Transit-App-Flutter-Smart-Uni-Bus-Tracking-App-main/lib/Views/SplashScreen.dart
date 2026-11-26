@@ -5,7 +5,6 @@ import 'package:uni_transit/Core/Constants/AppColors.dart';
 import 'package:uni_transit/Core/Constants/AppAssets.dart';
 import 'package:uni_transit/Core/Util/Logger.dart';
 import 'package:uni_transit/Services/AuthService.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
 
 
 class SplashScreen extends StatefulWidget {
@@ -67,7 +66,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
       if (role == null) {
         try {
-          role = await _authService.getUserRole(user.id)
+          role = await _authService.getUserRole(user.uid)
               .timeout(const Duration(seconds: 5), onTimeout: () => null);
           if (role != null) await prefs.setString('user_role', role);
         } catch (e) {
@@ -79,36 +78,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         String routeName = '/login';
         final roleLower = role?.toLowerCase().trim();
         if (roleLower == 'student') {
-          try {
-            final res = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.id)
-                .get();
-            final isBlocked = res.data()?['isBlocked'] == true ||
-                res.data()?['isBlocked'] == 'true';
-            routeName = isBlocked ? '/blocked_student' : '/student_dashboard';
-          } catch (_) {
-            routeName = '/student_dashboard';
-          }
+          routeName = user.isBlocked ? '/blocked_student' : '/student_dashboard';
         } else if (roleLower == 'driver') {
-          try {
-            final res = await FirebaseFirestore.instance
-                .collection('drivers')
-                .doc(user.id)
-                .get();
-            final data = res.data();
-            final isVerified =
-                data?['isVerified'] == true || data?['isVerified'] == 'true';
-            final isBlocked =
-                data?['isBlocked'] == true || data?['isBlocked'] == 'true';
-            if (isBlocked) {
-              routeName = '/blocked_driver';
-            } else if (isVerified) {
-              routeName = '/driver_dashboard';
-            } else {
-              routeName = '/unverified_driver';
-            }
-          } catch (_) {
+          if (user.isBlocked) {
+            routeName = '/blocked_driver';
+          } else if (user.isVerified) {
+            routeName = '/driver_dashboard';
+          } else {
             routeName = '/unverified_driver';
           }
         } else if (roleLower == 'admin') {

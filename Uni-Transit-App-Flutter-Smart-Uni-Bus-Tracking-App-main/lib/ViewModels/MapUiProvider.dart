@@ -1,9 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
-import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../Core/Constants/CampusLocations.dart';
 
 class MapUiState {
@@ -37,29 +34,17 @@ class MapUiState {
 class MapUiNotifier extends Notifier<MapUiState> {
   @override
   MapUiState build() {
-    _listenToUserPreferences();
+    _loadGenderPreference();
     return MapUiState(
       userLocation: CampusLocations.baghdadCampus,
     );
   }
 
-  void _listenToUserPreferences() {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      FirebaseFirestore.instance
-          .collection('students')
-          .doc(user.id)
-          .snapshots()
-          .listen((snapshot) {
-        if (snapshot.exists) {
-          final data = snapshot.data();
-          if (data != null && data.containsKey('gender_preference')) {
-            state = state.copyWith(
-              selectedGender: data['gender_preference'] ?? "All",
-            );
-          }
-        }
-      });
+  Future<void> _loadGenderPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('pref_gender_filter');
+    if (saved != null) {
+      state = state.copyWith(selectedGender: saved);
     }
   }
 
@@ -72,18 +57,9 @@ class MapUiNotifier extends Notifier<MapUiState> {
 
   void updateGenderPreference(String gender) {
     state = state.copyWith(selectedGender: gender);
-    
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      FirebaseFirestore.instance
-          .collection('students')
-          .doc(user.id)
-          .update({
-            'gender_preference': gender,
-          }).catchError((e) {
-        debugPrint("Error updating gender preference: $e");
-      });
-    }
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('pref_gender_filter', gender);
+    });
   }
 
   void addNotifiedBus(String busId) {

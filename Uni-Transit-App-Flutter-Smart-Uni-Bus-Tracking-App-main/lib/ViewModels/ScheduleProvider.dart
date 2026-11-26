@@ -3,9 +3,23 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:uni_transit/Models/BusSchedule.dart';
 import 'package:uni_transit/Services/ScheduleService.dart';
 
-/// Stream provider that listens to schedules in real-time from Firestore.
+final scheduleServiceProvider = Provider<ScheduleService>((ref) => ScheduleService());
+
+/// Stream provider that listens to schedules in real-time from Django REST backend.
 final schedulesStreamProvider = StreamProvider<List<BusSchedule>>((ref) {
-  return ScheduleService().getSchedules();
+  return ref.watch(scheduleServiceProvider).getSchedules();
+});
+
+/// Future provider for raw active slots with live slot counters (total_buses, dispatched_count, remaining_count, is_last_bus)
+final activeSlotsProvider = FutureProvider.family<List<Map<String, dynamic>>, Map<String, dynamic>?>((ref, filters) async {
+  final service = ref.watch(scheduleServiceProvider);
+  return service.getActiveSlots(
+    routeId: filters?['route_id'],
+    shift: filters?['shift'],
+    dayType: filters?['day_type'],
+    gender: filters?['gender'],
+    tag: filters?['tag'],
+  );
 });
 
 /// Represents the selected date and month state for the assigned routes calendar view.

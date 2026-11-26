@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uni_transit/Core/Network/ApiClient.dart';
+import 'package:uni_transit/Core/Network/ApiConfig.dart';
+import 'package:uni_transit/Core/Network/WebSocketService.dart';
 import '../Core/Constants/CampusLocations.dart';
 
 Map<String, dynamic> _toCamelCase(Map<String, dynamic> map) {
@@ -18,27 +20,55 @@ class BusState {
 }
 
 class BusNotifier extends Notifier<BusState> {
+  final ApiClient _api = ApiClient();
+  final WebSocketService _ws = WebSocketService();
+  StreamSubscription? _wsSub;
+
   @override
   BusState build() {
-    _listenToBuses();
+    _fetchBuses();
+    _listenToWebSocket();
     return BusState();
   }
 
-  void _listenToBuses() {
-    final sub = Supabase.instance.client
-        .from('active_buses')
-        .stream(primaryKey: ['bus_number'])
-        .listen((event) {
-          final Map<String, dynamic> mapped = {};
-          for (var row in event) {
-            final key = row['bus_number'].toString();
-            final camelRow = _toCamelCase(row);
-            camelRow['id'] = key;
-            mapped[key] = camelRow;
-          }
-          state = BusState(liveBusData: mapped);
-        });
-    ref.onDispose(() => sub.cancel());
+  Future<void> _fetchBuses() async {
+    try {
+      final res = await _api.get(ApiConfig.buses);
+      if (res.statusCode == 200 && res.data != null) {
+        final List list = res.data is List ? res.data : (res.data['results'] ?? []);
+        final Map<String, dynamic> mapped = {};
+        for (var row in list) {
+          final key = row['bus_number'].toString();
+          final camelRow = _toCamelCase(Map<String, dynamic>.from(row));
+          camelRow['id'] = key;
+          mapped[key] = camelRow;
+        }
+        state = BusState(liveBusData: mapped);
+      }
+    } catch (_) {}
+  }
+
+  void _listenToWebSocket() {
+    _wsSub = _ws.routeUpdatesStream.listen((event) {
+      if (event['type'] == 'gps_update' || event['type'] == 'trip_update') {
+        final busNumber = event['bus_number']?.toString() ?? event['bus_id']?.toString() ?? '';
+        if (busNumber.isNotEmpty) {
+          final updated = Map<String, dynamic>.from(state.liveBusData);
+          updated[busNumber] = {
+            ...(updated[busNumber] ?? {}),
+            ..._toCamelCase(event),
+            'latitude': event['lat'] ?? event['latitude'],
+            'longitude': event['lng'] ?? event['longitude'],
+            'speed': event['speed_kmh'] ?? event['speed'],
+            'heading': event['heading'] ?? 0.0,
+            'crowdStatus': event['crowd_status'],
+            'lastUpdated': DateTime.now().millisecondsSinceEpoch,
+          };
+          state = BusState(liveBusData: updated);
+        }
+      }
+    });
+    ref.onDispose(() => _wsSub?.cancel());
   }
 }
 
@@ -52,31 +82,35 @@ class StopState {
 }
 
 class StopNotifier extends Notifier<StopState> {
+  final ApiClient _api = ApiClient();
+
   @override
   StopState build() {
-    _listenToStops();
-    return StopState();
+    _fetchStops();
+    return StopState(stopsData: {
+      "1": {
+        "name": "One Uni Point",
+        "latitude": 29.3850,
+        "longitude": 71.7350,
+        "route": "Baghdad ➔ Abbasia",
+      },
+    });
   }
 
-  void _listenToStops() {
-    final sub = Supabase.instance.client
-        .from('stops')
-        .stream(primaryKey: ['id'])
-        .listen((event) {
-          final Map<String, dynamic> mapped = {};
-          for (var row in event) {
-            mapped[row['id'].toString()] = _toCamelCase(row);
-          }
-          state = StopState(stopsData: mapped.isNotEmpty ? mapped : {
-            "default_stop_1": {
-              "name": "One Uni Point",
-              "latitude": 29.3850,
-              "longitude": 71.7350,
-              "route": "Baghdad ➔ Abbasia",
-            },
-          });
-        });
-    ref.onDispose(() => sub.cancel());
+  Future<void> _fetchStops() async {
+    try {
+      final res = await _api.get(ApiConfig.stops);
+      if (res.statusCode == 200 && res.data != null) {
+        final List list = res.data is List ? res.data : (res.data['results'] ?? []);
+        final Map<String, dynamic> mapped = {};
+        for (var row in list) {
+          mapped[row['id'].toString()] = _toCamelCase(Map<String, dynamic>.from(row));
+        }
+        if (mapped.isNotEmpty) {
+          state = StopState(stopsData: mapped);
+        }
+      }
+    } catch (_) {}
   }
 }
 
@@ -90,34 +124,44 @@ class HubState {
 }
 
 class HubNotifier extends Notifier<HubState> {
+  final ApiClient _api = ApiClient();
+
   @override
   HubState build() {
-    _listenToHubs();
-    return HubState();
+    _fetchHubs();
+    return HubState(hubsData: {
+      CampusLocations.abbasiaName: {
+        "latitude": CampusLocations.abbasiaCampus.latitude,
+        "longitude": CampusLocations.abbasiaCampus.longitude,
+      },
+      CampusLocations.baghdadName: {
+        "latitude": CampusLocations.baghdadCampus.latitude,
+        "longitude": CampusLocations.baghdadCampus.longitude,
+      },
+    });
   }
 
-  void _listenToHubs() {
-    final sub = Supabase.instance.client
-        .from('hubs')
-        .stream(primaryKey: ['name'])
-        .listen((event) {
-          final Map<String, dynamic> mergedHubs = {
-            CampusLocations.abbasiaName: {
-              "latitude": CampusLocations.abbasiaCampus.latitude,
-              "longitude": CampusLocations.abbasiaCampus.longitude,
-            },
-            CampusLocations.baghdadName: {
-              "latitude": CampusLocations.baghdadCampus.latitude,
-              "longitude": CampusLocations.baghdadCampus.longitude,
-            },
-          };
-
-          for (var row in event) {
-            mergedHubs[row['name'].toString()] = _toCamelCase(row);
-          }
-          state = HubState(hubsData: mergedHubs);
-        });
-    ref.onDispose(() => sub.cancel());
+  Future<void> _fetchHubs() async {
+    try {
+      final res = await _api.get(ApiConfig.hubs);
+      if (res.statusCode == 200 && res.data != null) {
+        final List list = res.data is List ? res.data : (res.data['results'] ?? []);
+        final Map<String, dynamic> mergedHubs = {
+          CampusLocations.abbasiaName: {
+            "latitude": CampusLocations.abbasiaCampus.latitude,
+            "longitude": CampusLocations.abbasiaCampus.longitude,
+          },
+          CampusLocations.baghdadName: {
+            "latitude": CampusLocations.baghdadCampus.latitude,
+            "longitude": CampusLocations.baghdadCampus.longitude,
+          },
+        };
+        for (var row in list) {
+          mergedHubs[row['name'].toString()] = _toCamelCase(Map<String, dynamic>.from(row));
+        }
+        state = HubState(hubsData: mergedHubs);
+      }
+    } catch (_) {}
   }
 }
 
@@ -131,33 +175,35 @@ class GenderState {
 }
 
 class GenderConfigNotifier extends Notifier<GenderState> {
+  final ApiClient _api = ApiClient();
+
   @override
   GenderState build() {
-    _listenToGenderConfigs();
+    _fetchGenderConfigs();
     return GenderState(genderConfigs: {
       "Girls Special": {"color": "0xFFFF4081"},
       "Boys Special": {"color": "0xFF448AFF"},
       "Combined": {"color": "0xFF9C27B0"},
+      "Staff": {"color": "0xFF00B0FF"},
     });
   }
 
-  void _listenToGenderConfigs() {
-    final sub = Supabase.instance.client
-        .from('app_settings')
-        .stream(primaryKey: ['key'])
-        .eq('key', 'gender_configs')
-        .listen((event) {
-          if (event.isNotEmpty) {
-            final rawData = Map<String, dynamic>.from(event.first['value'] as Map);
-            final Map<String, dynamic> parsed = {};
-            rawData.forEach((key, value) {
-              final String valStr = value.toString().replaceAll('#', '0xFF');
-              parsed[key] = {"color": valStr};
-            });
-            state = GenderState(genderConfigs: parsed);
-          }
-        });
-    ref.onDispose(() => sub.cancel());
+  Future<void> _fetchGenderConfigs() async {
+    try {
+      final res = await _api.get(ApiConfig.genderCategories);
+      if (res.statusCode == 200 && res.data != null) {
+        final List list = res.data is List ? res.data : (res.data['results'] ?? []);
+        final Map<String, dynamic> parsed = {};
+        for (var row in list) {
+          final name = row['name']?.toString() ?? '';
+          final color = (row['color_code'] ?? '0xFF9C27B0').toString().replaceAll('#', '0xFF');
+          parsed[name] = {"color": color};
+        }
+        if (parsed.isNotEmpty) {
+          state = GenderState(genderConfigs: parsed);
+        }
+      }
+    } catch (_) {}
   }
 }
 

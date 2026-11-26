@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
 
 import 'package:uni_transit/Core/Constants/AppAssets.dart';
 import 'package:uni_transit/Core/Constants/AppColors.dart';
@@ -64,7 +63,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Force fetch if missing
       if (role == null) {
         final authService = ref.read(authServiceProvider);
-        role = await authService.getUserRole(authState.value!.id);
+        role = await authService.getUserRole(authState.value!.uid);
         if (role != null) await prefs.setString('user_role', role);
       }
 
@@ -77,47 +76,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       final roleLower = role.toLowerCase().trim();
       
+      final user = authState.value!;
       if (roleLower == 'driver') {
-        // Check if driver is verified and blocked
-        final driverDoc = await FirebaseFirestore.instance.collection('drivers').doc(authState.value!.id).get();
-        bool isVerified = false;
-        bool isBlocked = false;
-        if (driverDoc.exists) {
-          final data = driverDoc.data();
-          isVerified = data?['isVerified'] == true || data?['isVerified'] == 'true';
-          isBlocked = data?['isBlocked'] == true || data?['isBlocked'] == 'true';
-        }
-        
-        if (isBlocked) {
+        if (user.isBlocked) {
           Navigator.pushReplacementNamed(context, AppRoutes.blockedDriver);
-        } else if (isVerified) {
+        } else if (user.isVerified) {
           Navigator.pushReplacementNamed(context, AppRoutes.driverDashboard);
         } else {
           Navigator.pushReplacementNamed(context, AppRoutes.unverifiedDriver);
         }
       } else if (roleLower == 'admin') {
         Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
-      } else if (roleLower == 'student') {
-        final studentDoc = await FirebaseFirestore.instance.collection('users').doc(authState.value!.id).get();
-        bool isBlocked = false;
-        if (studentDoc.exists) {
-          final data = studentDoc.data();
-          isBlocked = data?['isBlocked'] == true || data?['isBlocked'] == 'true';
-        }
-        if (isBlocked) {
-          Navigator.pushReplacementNamed(context, AppRoutes.blockedStudent);
-        } else {
-          Navigator.pushReplacementNamed(context, AppRoutes.studentDashboard);
-        }
       } else {
-        _showError("Unknown role: $role. Redirecting to student dashboard.");
-        final studentDoc = await FirebaseFirestore.instance.collection('users').doc(authState.value!.id).get();
-        bool isBlocked = false;
-        if (studentDoc.exists) {
-          final data = studentDoc.data();
-          isBlocked = data?['isBlocked'] == true || data?['isBlocked'] == 'true';
-        }
-        if (isBlocked) {
+        if (user.isBlocked) {
           Navigator.pushReplacementNamed(context, AppRoutes.blockedStudent);
         } else {
           Navigator.pushReplacementNamed(context, AppRoutes.studentDashboard);

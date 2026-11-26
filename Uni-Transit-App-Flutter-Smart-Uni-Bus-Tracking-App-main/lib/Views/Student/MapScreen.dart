@@ -6,9 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:uni_transit/Core/Constants/AppColors.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +19,7 @@ import 'package:uni_transit/Services/TripAlertService.dart';
 import 'package:uni_transit/ViewModels/RouteProvider.dart';
 import 'package:uni_transit/ViewModels/BusProvider.dart';
 import 'package:uni_transit/ViewModels/MapUiProvider.dart';
+import 'package:uni_transit/ViewModels/AuthProvider.dart';
 
 // 🚀 PROFESSIONAL FEATURES ADDED:
 // 1. Hub Snapping: Markers automatically align with polyline ends.
@@ -1048,37 +1047,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
               String distToStudentDisplay = distToStudentText;
 
-              final driverId = currentBusData['driverId'] as String?;
+              String driverName = currentBusData['driverName'] ?? "Driver";
+              String profileUrl = "";
+              bool isVerified = true;
+              String phone = "";
+              String email = "";
+              String experience = "N/A";
+              String cnic = "";
+              String licenseNumber = "";
 
-              return StreamBuilder<DocumentSnapshot>(
-                stream: driverId != null && driverId.isNotEmpty
-                    ? FirebaseFirestore.instance.collection('drivers').doc(driverId).snapshots()
-                    : const Stream.empty(),
-                builder: (context, driverSnapshot) {
-                  String driverName = currentBusData['driverName'] ?? "Driver";
-                  String profileUrl = "";
-                  bool isVerified = false;
-                  String phone = "";
-                  String email = "";
-                  String experience = "N/A";
-                  String cnic = "";
-                  String licenseNumber = "";
-
-                  if (driverSnapshot.hasData && driverSnapshot.data!.exists) {
-                    final driverData = driverSnapshot.data!.data() as Map<String, dynamic>?;
-                    if (driverData != null) {
-                      driverName = driverData['name'] ?? driverName;
-                      profileUrl = driverData['profileUrl'] ?? "";
-                      isVerified = driverData['isVerified'] ?? false;
-                      phone = driverData['phoneNumber'] ?? "";
-                      email = driverData['email'] ?? "";
-                      experience = driverData['experience'] ?? "N/A";
-                      cnic = driverData['cnic'] ?? "";
-                      licenseNumber = driverData['licenseNumber'] ?? "";
-                    }
-                  }
-
-                  return Container(
+              return Container(
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.of(context).viewInsets.bottom,
                     ),
@@ -1421,8 +1399,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       ),
                     ),
                   );
-                },
-              );
             },
           ),
     );
@@ -1602,13 +1578,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
 
   void _updateGenderInBackend(String gender) async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.id)
-          .update({'genderPreference': gender});
-    }
+    ref.read(mapUiProvider.notifier).updateGenderPreference(gender);
   }
 
   Future<void> _getCurrentLocation() async {
@@ -1806,7 +1776,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
 
   void _handleSOS() {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = ref.read(authStateProvider).value;
     if (user != null) {
       final uiState = ref.read(mapUiProvider);
       showModalBottomSheet(
@@ -1816,7 +1786,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         builder: (context) {
           return _SOSOptionsBottomSheet(
             userId: user.uid,
-            userName: user.displayName ?? "Student",
+            userName: user.name,
             lat: uiState.userLocation.latitude,
             lng: uiState.userLocation.longitude,
           );
@@ -2418,15 +2388,9 @@ class _SOSOptionsBottomSheetState extends State<_SOSOptionsBottomSheet> {
     _countdownTimer?.cancel();
 
     try {
-      Map<String, dynamic>? studentDetails;
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
-        if (doc.exists) {
-          studentDetails = doc.data();
-        }
-      } catch (e) {
-        debugPrint("Error loading student details for SOS: $e");
-      }
+      final studentDetails = <String, dynamic>{
+        'role': 'Student',
+      };
 
       final Map<String, dynamic> extraDetails = {
         'role': 'Student',

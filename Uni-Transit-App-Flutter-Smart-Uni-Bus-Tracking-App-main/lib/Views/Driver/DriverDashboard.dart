@@ -17,9 +17,6 @@ import 'package:uni_transit/Core/Routes/AppRoutes.dart';
 import 'package:uni_transit/Services/SosService.dart';
 import 'package:uni_transit/Services/NotificationService.dart';
 import 'package:uni_transit/ViewModels/AuthProvider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uni_transit/Core/Util/CloudFirestoreCompat.dart';
-import 'package:uni_transit/Views/Common/SosReviewBottomSheet.dart';
 import 'package:uni_transit/Views/Driver/AssignedRoutesScreen.dart';
 import 'package:uni_transit/Widgets/CustomAppBar.dart';
 
@@ -39,7 +36,6 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
   late AnimationController _pulseController;
   
   StreamSubscription? _locationSubscription;
-  StreamSubscription<QuerySnapshot>? _notificationSubscription;
   final DateTime _appStartTime = DateTime.now();
 
   @override
@@ -50,10 +46,6 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    // Mark driver as Online
-    _updateStatus('Online');
-    _listenForPushNotifications();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = _authService.currentUser;
       if (user != null) {
@@ -63,115 +55,14 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
         }
       }
       _initLocationTracking();
-      _checkForPendingSosReviews();
     });
   }
 
-  Future<void> _checkForPendingSosReviews() async {
-    final uid = Supabase.instance.client.auth.currentUser?.uid;
-    if (uid == null) return;
+  Future<void> _checkForPendingSosReviews() async {}
 
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('notifications')
-          .where('type', isEqualTo: 'sos_resolved')
-          .get();
+  void _listenForPushNotifications() {}
 
-      final unreviewedDocs = snapshot.docs.where((doc) {
-        final data = doc.data();
-        return data != null && data['isReviewed'] != true && data['alertId'] != null;
-      }).toList();
-
-      if (unreviewedDocs.isNotEmpty && mounted) {
-        final doc = unreviewedDocs.first;
-        final data = doc.data();
-        final alertId = data?['alertId']?.toString() ?? '';
-        final message = data?['message'] ?? 'SOS Alert Resolved';
-
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (context) => SosReviewBottomSheet(
-            notificationId: doc.id,
-            alertId: alertId,
-            alertMessage: message,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("Error checking for pending SOS reviews: $e");
-    }
-  }
-
-  void _listenForPushNotifications() {
-    final uid = Supabase.instance.client.auth.currentUser?.uid;
-    if (uid == null) return;
-
-    _notificationSubscription = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('notifications')
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(_appStartTime))
-        .snapshots()
-        .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          final data = change.doc.data() as Map<String, dynamic>?;
-          if (data != null) {
-            final title = data['title'] ?? 'New Support Alert';
-            final message = data['message'] ?? '';
-            
-            // Trigger local/push notification
-            NotificationService.showLocalNotification(
-              title: title,
-              body: message,
-            );
-            
-            // Show custom in-app visual snackbar
-            NotificationService.show(
-              title: title,
-              message: message,
-              type: NotificationType.info,
-            );
-
-            // Pop up review dialog directly if this is an SOS resolution alert
-            if (data['type'] == 'sos_resolved' && data['alertId'] != null && data['isReviewed'] != true) {
-              Future.delayed(const Duration(milliseconds: 1000), () {
-                if (mounted) {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (context) => SosReviewBottomSheet(
-                      notificationId: change.doc.id,
-                      alertId: data['alertId'].toString(),
-                      alertMessage: message,
-                    ),
-                  );
-                }
-              });
-            }
-          }
-        }
-      }
-    }, onError: (error) {
-      debugPrint("Error listening for user notifications: $error");
-    });
-  }
-
-  Future<void> _updateStatus(String status) async {
-    final uid = Supabase.instance.client.auth.currentUser?.uid;
-    if (uid == null) return;
-    try {
-      await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(uid)
-          .update({'status': status});
-    } catch (_) {}
-  }
+  Future<void> _updateStatus(String status) async {}
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
     final latTween = Tween<double>(
@@ -238,7 +129,6 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
     // Mark driver as Offline when they leave the dashboard
     _updateStatus('Offline');
     _locationSubscription?.cancel();
-    _notificationSubscription?.cancel();
     _pulseController.dispose();
     _busNumberController.dispose();
     _plateNumberController.dispose();
@@ -682,7 +572,7 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
         if (next.value == null) {
           // Only treat null as "deleted" if the user is still authenticated.
           // If currentUser is null, it means they simply logged out — not deleted.
-          if (Supabase.instance.client.auth.currentUser == null) return;
+          if (_authService.currentUser == null) return;
           // Account was deleted by admin
           ref.read(authStateProvider.notifier).logout();
           Navigator.pushReplacementNamed(context, AppRoutes.login);
@@ -889,36 +779,21 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
             Positioned(
               top: 40,
               right: 20,
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(Supabase.instance.client.auth.currentUser?.uid)
-                    .collection('notifications')
-                    .where('isRead', isEqualTo: false)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  final bool hasUnread = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
-                  return GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.notifications),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
-                      ),
-                      child: Badge(
-                        isLabelVisible: hasUnread,
-                        backgroundColor: Colors.red,
-                        child: const Icon(
-                          Icons.notifications_outlined,
-                          color: AppColors.primaryNavy,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  );
-                },
+              child: GestureDetector(
+                onTap: () => Navigator.pushNamed(context, AppRoutes.notifications),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+                  ),
+                  child: const Icon(
+                    Icons.notifications_outlined,
+                    color: AppColors.primaryNavy,
+                    size: 24,
+                  ),
+                ),
               ),
             ),
 
@@ -1591,26 +1466,147 @@ class _DriverDashboardState extends ConsumerState<DriverDashboard>
   }
 
   Widget _buildActiveTripStatus(DriverTripState state) {
-    return Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: AppColors.primaryNavy, borderRadius: BorderRadius.circular(24)),
-      child: Column(children: [
-        Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(state.plateNumber, style: const TextStyle(color: AppColors.primaryYellow, fontSize: 10, fontWeight: FontWeight.bold)),
-                Text("${state.from} ➔ ${state.to}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-          ])),
-          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(8)), child: Text("ID: ${state.busNumber}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-        ]),
-        const Divider(color: Colors.white24, height: 24),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween, 
-          children: [
-            _buildActiveInfo("DISTANCE", state.remainingDistance), 
-            _buildActiveInfo("ETA", state.remainingTime), 
-            _buildActiveInfo("SPEED", "${(state.speed * 3.6).toStringAsFixed(0)} KM/H"), 
-            _buildActiveInfo("TRACKING", "LIVE"),
-          ]
+    final currentCrowd = state.crowdStatus;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(color: AppColors.primaryNavy, borderRadius: BorderRadius.circular(24)),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(state.plateNumber, style: const TextStyle(color: AppColors.primaryYellow, fontSize: 10, fontWeight: FontWeight.bold)),
+                    Text("${state.from} ➔ ${state.to}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(8)),
+                child: Text("ID: ${state.busNumber}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white24, height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildActiveInfo("DISTANCE", state.remainingDistance),
+              _buildActiveInfo("ETA", state.remainingTime),
+              _buildActiveInfo("SPEED", "${(state.speed * 3.6).toStringAsFixed(0)} KM/H"),
+              _buildActiveInfo("TRACKING", "LIVE"),
+            ],
+          ),
+          const Divider(color: Colors.white24, height: 20),
+          // 1-Tap Crowd Status Controls
+          Row(
+            children: [
+              const Text("CROWD:", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildCrowdChip(
+                      label: "Seats Available",
+                      statusKey: "seats_available",
+                      currentKey: currentCrowd,
+                      activeColor: Colors.green,
+                    ),
+                    _buildCrowdChip(
+                      label: "Standing",
+                      statusKey: "standing",
+                      currentKey: currentCrowd,
+                      activeColor: Colors.orange,
+                    ),
+                    _buildCrowdChip(
+                      label: "Full",
+                      statusKey: "full",
+                      currentKey: currentCrowd,
+                      activeColor: Colors.red,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Quick Alert Buttons for Breakdown & Delay
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(driverTripProvider.notifier).reportAlert(
+                      'delay',
+                      'Traffic delay reported on route by Driver',
+                    );
+                  },
+                  icon: const Icon(Icons.access_time_filled_rounded, size: 14, color: Colors.amber),
+                  label: const Text("Report Delay", style: TextStyle(fontSize: 10, color: Colors.amber, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.amber),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(driverTripProvider.notifier).reportAlert(
+                      'breakdown',
+                      'Mechanical breakdown reported by Driver',
+                    );
+                  },
+                  icon: const Icon(Icons.car_crash_rounded, size: 14, color: Colors.redAccent),
+                  label: const Text("Breakdown", style: TextStyle(fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.redAccent),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCrowdChip({
+    required String label,
+    required String statusKey,
+    required String currentKey,
+    required Color activeColor,
+  }) {
+    final isSelected = statusKey == currentKey;
+    return GestureDetector(
+      onTap: () {
+        ref.read(driverTripProvider.notifier).updateCrowdStatus(statusKey);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor : Colors.white12,
+          borderRadius: BorderRadius.circular(6),
+          border: isSelected ? Border.all(color: Colors.white, width: 1.5) : null,
         ),
-      ]),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
     );
   }
 
@@ -1731,15 +1727,7 @@ class _DriverSOSOptionsBottomSheetState extends State<_DriverSOSOptionsBottomShe
     _countdownTimer?.cancel();
 
     try {
-      Map<String, dynamic>? driverDetails;
-      try {
-        final doc = await FirebaseFirestore.instance.collection('drivers').doc(widget.userId).get();
-        if (doc.exists) {
-          driverDetails = doc.data();
-        }
-      } catch (e) {
-        debugPrint("Error loading driver details for SOS: $e");
-      }
+      Map<String, dynamic>? driverDetails = AuthService().currentUser?.toMap();
 
       final Map<String, dynamic> extraDetails = {
         'role': 'Driver',
