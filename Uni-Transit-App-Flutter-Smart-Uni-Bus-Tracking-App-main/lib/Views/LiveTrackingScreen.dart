@@ -4,7 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:uni_transit/ViewModels/BusProvider.dart';
 import 'package:uni_transit/Widgets/CustomAppBar.dart';
-import 'package:uni_transit/Widgets/TrackMyTrainSheet.dart';
+import 'package:uni_transit/Widgets/LiveBusTimelineSheet.dart';
 
 class LiveTrackingScreen extends ConsumerStatefulWidget {
   const LiveTrackingScreen({super.key});
@@ -32,7 +32,7 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen> {
             height: 100,
             child: GestureDetector(
               onTap: () {
-                TrackMyTrainSheet.show(
+                LiveBusTimelineSheet.show(
                   context,
                   busNumber: busNum,
                   gender: row['gender']?.toString() ?? 'Combined',

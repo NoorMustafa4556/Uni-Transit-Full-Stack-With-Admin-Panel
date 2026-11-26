@@ -5,7 +5,7 @@ import 'package:uni_transit/Models/BusSchedule.dart';
 import 'package:uni_transit/Services/ScheduleService.dart';
 import 'package:uni_transit/Core/Constants/AppColors.dart';
 import 'package:uni_transit/ViewModels/BusProvider.dart';
-import 'package:uni_transit/Widgets/TrackMyTrainSheet.dart';
+import 'package:uni_transit/Widgets/LiveBusTimelineSheet.dart';
 
 class ScheduleScreen extends ConsumerStatefulWidget {
   const ScheduleScreen({super.key});
@@ -496,7 +496,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
 
               return InkWell(
                 onTap: () {
-                  TrackMyTrainSheet.show(
+                  LiveBusTimelineSheet.show(
                     context,
                     busNumber: schedule.busNumber,
                     gender: schedule.type,

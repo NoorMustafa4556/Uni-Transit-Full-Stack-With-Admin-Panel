@@ -287,7 +287,7 @@ class DriverTripHistoryView(views.APIView):
         return Response(TripSerializer(trips, many=True).data)
 
 
-# --- Student Track-My-Train Stop Feed ---
+# --- Student Live Bus Stop Feed (Track My Point) ---
 
 class StudentStopFeedView(views.APIView):
     permission_classes = [permissions.AllowAny]

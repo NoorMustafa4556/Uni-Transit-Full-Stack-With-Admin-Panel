@@ -20,7 +20,7 @@ import 'package:uni_transit/ViewModels/RouteProvider.dart';
 import 'package:uni_transit/ViewModels/BusProvider.dart';
 import 'package:uni_transit/ViewModels/MapUiProvider.dart';
 import 'package:uni_transit/ViewModels/AuthProvider.dart';
-import 'package:uni_transit/Widgets/TrackMyTrainSheet.dart';
+import 'package:uni_transit/Widgets/LiveBusTimelineSheet.dart';
 
 // 🚀 PROFESSIONAL FEATURES ADDED:
 // 1. Hub Snapping: Markers automatically align with polyline ends.
@@ -1402,7 +1402,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                                     final stopId = currentBusData['stop_id'] ?? currentBusData['stopId'] ?? currentBusData['next_stop_id'];
                                     final numStopId = stopId != null ? int.tryParse(stopId.toString()) : null;
 
-                                    TrackMyTrainSheet.show(
+                                    LiveBusTimelineSheet.show(
                                       context,
                                       tripId: numTripId,
                                       stopId: numStopId,
@@ -1417,7 +1417,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                                   },
                                   icon: const Icon(Icons.timeline_rounded, color: Colors.white, size: 20),
                                   label: Text(
-                                    "Open Track-My-Train Timeline",
+                                    "Open Live Bus Timeline",
                                     style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
                                   ),
                                   style: ElevatedButton.styleFrom(

@@ -128,7 +128,7 @@ class UniTransitPhase2APITests(APITestCase):
         self.assertEqual(slot_data2['remaining_count'], 1)
         self.assertTrue(slot_data2['is_last_bus'])  # remaining <= 1
 
-    # TEST 3: Driver Trip Lifecycle & Student Track-My-Train Stop Feed
+    # TEST 3: Driver Trip Lifecycle & Student Live Bus Stop Feed (Track My Point)
     def test_03_driver_trip_lifecycle_and_student_stop_feed(self):
         # Driver starts trip
         self.client.force_authenticate(user=self.driver_user)
@@ -152,7 +152,7 @@ class UniTransitPhase2APITests(APITestCase):
         })
         self.assertEqual(loc_resp.status_code, status.HTTP_200_OK)
 
-        # Student checks Track-My-Train feed for Stop 2 (Saddar Pully)
+        # Student checks Live Bus Feed for Stop 2 (Saddar Pully)
         self.client.force_authenticate(user=None)  # Public or Student
         feed_resp = self.client.get(f'/api/v1/tracking/student/stop-feed/?stop_id={self.stop2.id}&lat=29.3925&lng=71.6923')
         self.assertEqual(feed_resp.status_code, status.HTTP_200_OK)

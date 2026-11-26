@@ -4,7 +4,7 @@ import 'package:uni_transit/Core/Constants/AppColors.dart';
 import 'package:uni_transit/Core/Network/ApiClient.dart';
 import 'package:uni_transit/Core/Network/ApiConfig.dart';
 
-class TrackMyTrainSheet extends StatefulWidget {
+class LiveBusTimelineSheet extends StatefulWidget {
   final int? tripId;
   final int? stopId;
   final String busNumber;
@@ -19,7 +19,7 @@ class TrackMyTrainSheet extends StatefulWidget {
   final String? etaText;
   final String? distanceText;
 
-  const TrackMyTrainSheet({
+  const LiveBusTimelineSheet({
     super.key,
     this.tripId,
     this.stopId,
@@ -56,7 +56,7 @@ class TrackMyTrainSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => TrackMyTrainSheet(
+      builder: (ctx) => LiveBusTimelineSheet(
         tripId: tripId,
         stopId: stopId,
         busNumber: busNumber,
@@ -75,10 +75,10 @@ class TrackMyTrainSheet extends StatefulWidget {
   }
 
   @override
-  State<TrackMyTrainSheet> createState() => _TrackMyTrainSheetState();
+  State<LiveBusTimelineSheet> createState() => _LiveBusTimelineSheetState();
 }
 
-class _TrackMyTrainSheetState extends State<TrackMyTrainSheet> {
+class _LiveBusTimelineSheetState extends State<LiveBusTimelineSheet> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _stops = [];
 
@@ -371,7 +371,7 @@ class _TrackMyTrainSheetState extends State<TrackMyTrainSheet> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                "ROUTE TIMELINE (LIVE TRACK-MY-TRAIN)",
+                "ROUTE TIMELINE (LIVE BUS TRACKER)",
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -489,7 +489,7 @@ class _TrackMyTrainSheetState extends State<TrackMyTrainSheet> {
                                                     borderRadius: BorderRadius.circular(4),
                                                   ),
                                                   child: Text(
-                                                    "MY STOP",
+                                                    "MY POINT",
                                                     style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
                                                   ),
                                                 ),
@@ -532,3 +532,6 @@ class _TrackMyTrainSheetState extends State<TrackMyTrainSheet> {
     );
   }
 }
+
+// Backward-compatibility alias
+typedef TrackMyTrainSheet = LiveBusTimelineSheet;

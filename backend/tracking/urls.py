@@ -18,7 +18,7 @@ urlpatterns = [
     path('tracking/driver/trips/active/', DriverActiveTripView.as_view(), name='driver-trip-active'),
     path('tracking/driver/trips/history/', DriverTripHistoryView.as_view(), name='driver-trip-history'),
 
-    # Student Track-My-Train Stop Feed
+    # Student Live Bus Stop Feed (Track My Point)
     path('tracking/student/stop-feed/', StudentStopFeedView.as_view(), name='student-stop-feed'),
 
     # Admin monitoring
