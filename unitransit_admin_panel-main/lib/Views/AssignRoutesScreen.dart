@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Models/DriverModel.dart';
@@ -1287,69 +1286,22 @@ class _AssignRoutesScreenState extends State<AssignRoutesScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final db = FirebaseFirestore.instance;
+      final firebaseService = context.read<FirebaseService>();
       final schedule = _selectedSchedule!;
 
-      // 1. Update schedule document with driver + conductor + bus + departure time
-      await db.collection('schedules').doc(schedule.id).update({
-        'assignedDriverId': _selectedDriverId ?? '',
-        'assignedDriverName': _selectedDriverName ?? '',
-        'assignedConductorName': _conductorController.text.trim(),
-        'busNumber': _busController.text.trim(),
-        'departureTime': _timeController.text.trim(),
-      });
-
-      // 2. Update driver's assignedRoutes list (add this schedule id)
-      if (_selectedDriverId != null && _selectedDriverId!.isNotEmpty) {
-        final driverDoc = await db.collection('drivers').doc(_selectedDriverId).get();
-        if (driverDoc.exists) {
-          final currentRoutes = List<String>.from(driverDoc.data()?['assignedRoutes'] ?? []);
-          if (!currentRoutes.contains(schedule.id)) {
-            currentRoutes.add(schedule.id);
-          }
-          // Also compile bus numbers from all assigned schedules
-          final allScheduleIds = currentRoutes;
-          final busNumbers = <String>{};
-          for (final sid in allScheduleIds) {
-            final sDoc = await db.collection('schedules').doc(sid).get();
-            if (sDoc.exists) {
-              final bn = sDoc.data()?['busNumber'] ?? '';
-              if (bn.toString().isNotEmpty && bn != 'TBA') busNumbers.add(bn);
-            }
-          }
-          await db.collection('drivers').doc(_selectedDriverId).update({
-            'assignedRoutes': currentRoutes,
-            'assignedBus': busNumbers.join(', '),
-          });
-        }
-      }
-
-      // 3. If previous driver was different, remove this schedule from old driver
-      if (schedule.assignedDriverId != null &&
-          schedule.assignedDriverId!.isNotEmpty &&
-          schedule.assignedDriverId != _selectedDriverId) {
-        final oldDriverDoc = await db.collection('drivers').doc(schedule.assignedDriverId).get();
-        if (oldDriverDoc.exists) {
-          final oldRoutes = List<String>.from(oldDriverDoc.data()?['assignedRoutes'] ?? []);
-          oldRoutes.remove(schedule.id);
-          // Also compile bus numbers for the old driver
-          final busNumbers = <String>{};
-          for (final sid in oldRoutes) {
-            final sDoc = await db.collection('schedules').doc(sid).get();
-            if (sDoc.exists) {
-              final bn = sDoc.data()?['busNumber'] ?? '';
-              if (bn.toString().isNotEmpty && bn != 'TBA') busNumbers.add(bn);
-            }
-          }
-          await db.collection('drivers').doc(schedule.assignedDriverId).update({
-            'assignedRoutes': oldRoutes,
-            'assignedBus': busNumbers.join(', '),
-          });
-        }
-      }
+      await firebaseService.updateBusSchedule(
+        schedule.id,
+        schedule.copyWith(
+          assignedDriverId: _selectedDriverId ?? '',
+          assignedDriverName: _selectedDriverName ?? '',
+          assignedConductorName: _conductorController.text.trim(),
+          busNumber: _busController.text.trim(),
+          departureTime: _timeController.text.trim(),
+        ),
+        schedule.route,
+      );
 
       // Send notifications to drivers
-      final firebaseService = context.read<FirebaseService>();
       final prevDriverId = schedule.assignedDriverId;
       final newDriverId = _selectedDriverId;
       final newBus = _busController.text.trim();
@@ -1426,7 +1378,6 @@ class _AssignRoutesScreenState extends State<AssignRoutesScreen> {
 
   void _showCreateAssignmentDialog(BuildContext context) {
     final firebaseService = context.read<FirebaseService>();
-    final db = FirebaseFirestore.instance;
     final fromController = TextEditingController();
     final toController = TextEditingController();
     final busController = TextEditingController();
@@ -1865,7 +1816,7 @@ class _AssignRoutesScreenState extends State<AssignRoutesScreen> {
                                     isSavingNew = true;
                                   });
                                   try {
-                                    final newId = db.collection('schedules').doc().id;
+                                    final newId = DateTime.now().millisecondsSinceEpoch.toString();
                                     final routeName = selectedRouteName!;
                                     
                                     final schedule = BusSchedule(
@@ -1890,31 +1841,9 @@ class _AssignRoutesScreenState extends State<AssignRoutesScreen> {
                                       await firebaseService.sendUserNotification(
                                         userId: dialogSelectedDriverId!,
                                         title: 'New Route Assigned',
-                                        message: 'You have been assigned to Bus \'${busController.text.trim()}\' at \'${timeController.text.trim()}\' for route \'$routeName\'.',
+                                        message: 'You have been assigned to Bus \'$busController.text.trim()\' at \'$timeController.text.trim()\' for route \'$routeName\'.',
                                         type: 'info',
                                       );
-                                    }
-                                    
-                                    if (dialogSelectedDriverId != null && dialogSelectedDriverId!.isNotEmpty) {
-                                      final driverDoc = await db.collection('drivers').doc(dialogSelectedDriverId).get();
-                                      if (driverDoc.exists) {
-                                        final currentRoutes = List<String>.from(driverDoc.data()?['assignedRoutes'] ?? []);
-                                        if (!currentRoutes.contains(newId)) {
-                                          currentRoutes.add(newId);
-                                        }
-                                        final busNumbers = <String>{};
-                                        for (final sid in currentRoutes) {
-                                          final sDoc = await db.collection('schedules').doc(sid).get();
-                                          if (sDoc.exists) {
-                                            final bn = sDoc.data()?['busNumber'] ?? '';
-                                            if (bn.toString().isNotEmpty && bn != 'TBA') busNumbers.add(bn);
-                                          }
-                                        }
-                                        await db.collection('drivers').doc(dialogSelectedDriverId).update({
-                                          'assignedRoutes': currentRoutes,
-                                          'assignedBus': busNumbers.join(', '),
-                                        });
-                                      }
                                     }
                                     
                                     if (context.mounted) {
@@ -2057,47 +1986,29 @@ class _AssignRoutesScreenState extends State<AssignRoutesScreen> {
                 Navigator.pop(context);
                 setState(() => _isSaving = true);
                 try {
-                  final db = FirebaseFirestore.instance;
                   final firebaseService = context.read<FirebaseService>();
                   
                   // 1. Update schedule document - clear all assigned info
-                  await db.collection('schedules').doc(schedule.id).update({
-                    'assignedDriverId': '',
-                    'assignedDriverName': '',
-                    'assignedConductorName': '',
-                    'busNumber': 'TBA',
-                    'departureTime': 'TBA',
-                  });
+                  await firebaseService.updateBusSchedule(
+                    schedule.id,
+                    schedule.copyWith(
+                      assignedDriverId: '',
+                      assignedDriverName: '',
+                      assignedConductorName: '',
+                      busNumber: 'TBA',
+                      departureTime: 'TBA',
+                    ),
+                    schedule.route,
+                  );
 
-                  // 2. Remove this schedule from driver's assigned list
+                  // Notify driver
                   if (schedule.assignedDriverId != null && schedule.assignedDriverId!.isNotEmpty) {
-                    final oldDriverDoc = await db.collection('drivers').doc(schedule.assignedDriverId).get();
-                    if (oldDriverDoc.exists) {
-                      final oldRoutes = List<String>.from(oldDriverDoc.data()?['assignedRoutes'] ?? []);
-                      oldRoutes.remove(schedule.id);
-                      
-                      // Recalculate old driver's assignedBus field
-                      final busNumbers = <String>{};
-                      for (final sid in oldRoutes) {
-                        final sDoc = await db.collection('schedules').doc(sid).get();
-                        if (sDoc.exists) {
-                          final bn = sDoc.data()?['busNumber'] ?? '';
-                          if (bn.toString().isNotEmpty && bn != 'TBA') busNumbers.add(bn);
-                        }
-                      }
-                      await db.collection('drivers').doc(schedule.assignedDriverId!).update({
-                        'assignedRoutes': oldRoutes,
-                        'assignedBus': busNumbers.join(', '),
-                      });
-                      
-                      // Notify driver
-                      await firebaseService.sendUserNotification(
-                        userId: schedule.assignedDriverId!,
-                        title: 'Route Assignment Removed',
-                        message: 'Your assignment for route \'${schedule.route}\' has been removed.',
-                        type: 'alert',
-                      );
-                    }
+                    await firebaseService.sendUserNotification(
+                      userId: schedule.assignedDriverId!,
+                      title: 'Route Assignment Removed',
+                      message: 'Your assignment for route \'${schedule.route}\' has been removed.',
+                      type: 'alert',
+                    );
                   }
 
                   // Update local state

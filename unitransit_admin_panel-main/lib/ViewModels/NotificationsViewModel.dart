@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 
 class NotificationsViewModel extends ChangeNotifier {
@@ -117,18 +116,10 @@ class NotificationsViewModel extends ChangeNotifier {
     try {
       final fileName =
           'notification_${DateTime.now().millisecondsSinceEpoch}_${_selectedImage!.name}';
-      final client = Supabase.instance.client;
-      await client.storage
-          .from('notifications')
-          .uploadBinary(
-            fileName,
-            _selectedImageBytes!,
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
-          );
-      final downloadUrl = client.storage
-          .from('notifications')
-          .getPublicUrl(fileName);
-      return downloadUrl;
+      return await _firebaseService.uploadImage(
+        _selectedImageBytes!,
+        'notifications/$fileName',
+      );
     } catch (e) {
       debugPrint("Error uploading image: $e");
       return null;

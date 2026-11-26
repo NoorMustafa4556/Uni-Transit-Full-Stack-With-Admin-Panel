@@ -1,7 +1,6 @@
 import 'dart:async'; // Required for StreamSubscription
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Models/BusScheduleModel.dart';
@@ -37,7 +36,7 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
     _currentMonth = DateTime(_selectedDate.year, _selectedDate.month);
     _calendarScrollController = ScrollController();
 
-    // Listen to gender_configs in Supabase settings
+    // Listen to gender_configs in Django settings
     _genderSub = Provider.of<FirebaseService>(context, listen: false)
         .getGenderConfigs()
         .listen((configs) {
@@ -1407,7 +1406,7 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                                   }
 
                                   final routeName = "${fromController.text.trim()} ➔ ${toController.text.trim()}";
-                                  final newId = isEdit ? schedule.id : FirebaseFirestore.instance.collection('schedules').doc().id;
+                                  final newId = isEdit ? schedule.id : DateTime.now().millisecondsSinceEpoch.toString();
 
                                   final newSchedule = BusSchedule(
                                     id: newId,

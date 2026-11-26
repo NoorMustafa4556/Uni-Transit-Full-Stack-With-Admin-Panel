@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
+import 'package:unitransit_admin/Core/Network/ApiClient.dart';
+import 'package:unitransit_admin/Core/Network/ApiConfig.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:unitransit_admin/Core/Utils/Animations.dart';
+import 'package:unitransit_admin/Models/TransportContactModel.dart';
 
 class AppConfigScreen extends StatefulWidget {
   const AppConfigScreen({super.key});
@@ -16,9 +19,12 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
   final _driverVersionController = TextEditingController();
   final _studentFocusNode = FocusNode();
   final _driverFocusNode = FocusNode();
+
   bool _studentMaintenance = false;
   bool _driverMaintenance = false;
   bool _isLoading = true;
+
+  List<TransportContactModel> _contacts = [];
 
   @override
   void dispose() {
@@ -33,20 +39,21 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
   void initState() {
     super.initState();
     _loadConfig();
+    _loadContacts();
   }
 
   Future<void> _loadConfig() async {
     try {
-      final res = await Supabase.instance.client
-          .from('app_settings')
-          .select()
-          .eq('key', 'config')
-          .maybeSingle();
-      if (res != null) {
-        final data = (res['value'] as Map<String, dynamic>?) ?? {};
+      final res = await ApiClient().get(
+        ApiConfig.config,
+        queryParameters: {'key': 'config'},
+      );
+      if (res.statusCode == 200 && res.data is Map) {
+        final val = res.data['value_json'];
+        final data = val is Map ? Map<String, dynamic>.from(val) : {};
         setState(() {
-          _studentVersionController.text = data['studentAppVersion'] ?? '1.0.0';
-          _driverVersionController.text = data['driverAppVersion'] ?? '1.0.0';
+          _studentVersionController.text = data['studentAppVersion'] ?? '2.0.0';
+          _driverVersionController.text = data['driverAppVersion'] ?? '2.0.0';
           _studentMaintenance = data['studentMaintenance'] ?? false;
           _driverMaintenance = data['driverMaintenance'] ?? false;
           _isLoading = false;
@@ -59,10 +66,19 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
     }
   }
 
+  Future<void> _loadContacts() async {
+    try {
+      final list = await AdminApiService().fetchContacts();
+      setState(() {
+        _contacts = list;
+      });
+    } catch (_) {}
+  }
+
   Future<void> _saveConfig() async {
-    await Supabase.instance.client.from('app_settings').upsert({
+    await ApiClient().post(ApiConfig.config, data: {
       'key': 'config',
-      'value': {
+      'value_json': {
         'studentAppVersion': _studentVersionController.text,
         'driverAppVersion': _driverVersionController.text,
         'studentMaintenance': _studentMaintenance,
@@ -72,86 +88,101 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Configuration updated successfully!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configuration updated successfully!'), backgroundColor: Colors.green),
+      );
     }
+  }
+
+  Future<void> _updateMaintenance(String field, bool value) async {
+    setState(() {
+      if (field == 'studentMaintenance') _studentMaintenance = value;
+      if (field == 'driverMaintenance') _driverMaintenance = value;
+    });
+    await _saveConfig();
   }
 
   @override
   Widget build(BuildContext context) {
     final isMobile = AppResponsiveUtil.isMobile(context);
 
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return FadeInSlide(
       duration: const Duration(milliseconds: 600),
       child: Padding(
         padding: EdgeInsets.all(isMobile ? 16 : 32),
-        child: StreamBuilder<List<Map<String, dynamic>>>(
-          stream: Supabase.instance.client
-              .from('app_settings')
-              .select().eq('key', 'config').asStream(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting && _isLoading) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final row = snapshot.data?.firstWhere(
-              (r) => r['key'] == 'config',
-              orElse: () => {},
-            );
-            final data = (row?['value'] as Map<String, dynamic>?) ?? {};
-            if (!_studentFocusNode.hasFocus) _studentVersionController.text = data['studentAppVersion'] ?? '1.0.0';
-            if (!_driverFocusNode.hasFocus) _driverVersionController.text = data['driverAppVersion'] ?? '1.0.0';
-            _studentMaintenance = data['studentMaintenance'] ?? _studentMaintenance;
-            _driverMaintenance = data['driverMaintenance'] ?? _driverMaintenance;
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(context),
-                const SizedBox(height: 32),
-                Expanded(
-                  child: ListView(
-                    children: [
-                      _buildSection('Student App Control', [
-                        _buildTextField('Current Version', _studentVersionController, _studentFocusNode),
-                        _buildSwitchTile('Maintenance Mode', _studentMaintenance, (v) => _updateMaintenance('studentMaintenance', v)),
-                      ]),
-                      const SizedBox(height: 24),
-                      _buildSection('Driver App Control', [
-                        _buildTextField('Current Version', _driverVersionController, _driverFocusNode),
-                        _buildSwitchTile('Maintenance Mode', _driverMaintenance, (v) => _updateMaintenance('driverMaintenance', v)),
-                      ]),
-                      const SizedBox(height: 48),
-                      Center(
-                        child: SizedBox(
-                          width: 200,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _saveConfig,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryNavy,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context),
+            const SizedBox(height: 32),
+            Expanded(
+              child: ListView(
+                children: [
+                  _buildSection('Student App Control', [
+                    _buildTextField('Current Version', _studentVersionController, _studentFocusNode),
+                    _buildSwitchTile('Maintenance Mode', _studentMaintenance, (v) => _updateMaintenance('studentMaintenance', v)),
+                  ]),
+                  const SizedBox(height: 24),
+                  _buildSection('Driver App Control', [
+                    _buildTextField('Current Version', _driverVersionController, _driverFocusNode),
+                    _buildSwitchTile('Maintenance Mode', _driverMaintenance, (v) => _updateMaintenance('driverMaintenance', v)),
+                  ]),
+                  const SizedBox(height: 24),
+                  _buildSection('Transport Helplines & Emergency Contacts', [
+                    _buildContactsList(),
+                  ]),
+                  const SizedBox(height: 36),
+                  Center(
+                    child: SizedBox(
+                      width: 200,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _saveConfig,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryNavy,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
+                        child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Future<void> _updateMaintenance(String field, bool value) async {
-    await Supabase.instance.client.from('app_settings').upsert({
-      'key': 'config',
-      'value': {field: value},
-    });
+  Widget _buildContactsList() {
+    if (_contacts.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('Official Helpline: 0300-6809094 (Transport Officer, Baghdad-ul-Jadeed Campus)'),
+      );
+    }
+
+    return Column(
+      children: _contacts.map((c) {
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: c.isEmergency ? Colors.red.shade100 : Colors.blue.shade100,
+            child: Icon(c.isEmergency ? Icons.emergency : Icons.phone, color: c.isEmergency ? Colors.red : Colors.blue),
+          ),
+          title: Text(c.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          subtitle: Text('${c.phone} ${c.role != null ? "• ${c.role}" : ""}'),
+          trailing: c.isEmergency
+              ? const Chip(label: Text('24/7 SOS', style: TextStyle(fontSize: 10, color: Colors.white)), backgroundColor: Colors.red)
+              : null,
+        );
+      }).toList(),
+    );
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -163,10 +194,14 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: AppColors.textDark,
+                fontSize: AppResponsiveUtil.isMobile(context) ? 24 : null,
               ),
         ),
-        const Text('Manage app versions and system-wide maintenance modes.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+        const SizedBox(height: 4),
+        const Text(
+          'Manage app version requirements, maintenance mode, and emergency transport contacts.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
       ],
     );
   }
@@ -175,15 +210,15 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        color: AppColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.borderLight),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primaryNavy)),
-          const SizedBox(height: 24),
+          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+          const SizedBox(height: 16),
           ...children,
         ],
       ),
@@ -192,27 +227,27 @@ class _AppConfigScreenState extends State<AppConfigScreen> {
 
   Widget _buildTextField(String label, TextEditingController controller, FocusNode focusNode) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: TextField(
         controller: controller,
         focusNode: focusNode,
         decoration: InputDecoration(
           labelText: label,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          prefixIcon: const Icon(Icons.system_update_rounded),
+          filled: true,
+          fillColor: AppColors.backgroundLight,
         ),
       ),
     );
   }
 
-  Widget _buildSwitchTile(String label, bool value, Function(bool) onChanged) {
+  Widget _buildSwitchTile(String title, bool value, ValueChanged<bool> onChanged) {
     return SwitchListTile(
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: const Text('Prevent users from accessing the app during maintenance.'),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: Text(value ? 'Service is temporarily offline for maintenance' : 'Operating normally'),
       value: value,
       onChanged: onChanged,
-      activeColor: AppColors.primaryNavy,
+      activeColor: Colors.amber.shade800,
     );
   }
 }
-

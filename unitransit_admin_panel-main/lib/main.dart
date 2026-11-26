@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Theme/AppTheme.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/ViewModels/DashboardViewModel.dart';
 import 'package:unitransit_admin/ViewModels/RoutePlanningViewModel.dart';
@@ -20,27 +18,20 @@ import 'package:unitransit_admin/ViewModels/FleetOperationsViewModel.dart';
 import 'package:unitransit_admin/ViewModels/BusesViewModel.dart';
 import 'package:unitransit_admin/Views/LoginScreen.dart';
 import 'package:unitransit_admin/Views/SplashScreen.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: 'https://eplzrubpbqsdmezvkjgz.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwbHpydWJwYnFzZG1lenZramd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNDgxMjQsImV4cCI6MjEwMDcyNDEyNH0.l633BESZHDigcg9ViA_tmhkFdcxoACoKmcBRRbuyS8w',
-    authOptions: const FlutterAuthClientOptions(
-      authFlowType: AuthFlowType.implicit,
-    ),
-  );
-  
-  // Upload initial "About" info to Firebase/Supabase if it doesn't exist
-  FirebaseService().uploadInitialAppInfo();
+
+  final adminApi = AdminApiService();
+  adminApi.uploadInitialAppInfo();
 
   runApp(
     MultiProvider(
       providers: [
-        Provider(create: (_) => FirebaseService()),
+        Provider<AdminApiService>(create: (_) => adminApi),
+        Provider<FirebaseService>(create: (_) => FirebaseService()),
         ChangeNotifierProvider(create: (_) => LoginViewModel()),
         ChangeNotifierProvider(create: (_) => DashboardViewModel()),
         ChangeNotifierProvider(
@@ -152,14 +143,13 @@ class _SessionTimeoutWrapperState extends State<SessionTimeoutWrapper> {
   }
 
   void _handleTimeout() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AdminApiService().getCurrentUser();
     if (user != null) {
-      await FirebaseAuth.instance.signOut();
+      await AdminApiService().logout();
       navigatorKey.currentState?.pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const LoginScreen()),
         (route) => false,
       );
-      // Show a snackbar or dialog if possible (optional)
     }
   }
 

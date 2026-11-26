@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
 
 class LoginViewModel extends ChangeNotifier {
   final emailController = TextEditingController();
@@ -9,11 +9,10 @@ class LoginViewModel extends ChangeNotifier {
   bool _isPasswordVisible = false;
   bool _isSuperAdmin = false;
   String _savedEmail = '';
-  String _subRole = 'All'; // Default to All/SuperAdmin access
+  String _subRole = 'super_admin';
 
   static const String _superAdminKey = 'is_super_admin';
   static const String _subRoleKey = 'admin_sub_role';
-  // Hashed PIN signature
   static const String _secretSignature = '30383539';
 
   bool get isLoading => _isLoading;
@@ -31,7 +30,7 @@ class LoginViewModel extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _savedEmail = prefs.getString('saved_email') ?? '';
     _isSuperAdmin = prefs.getBool(_superAdminKey) ?? false;
-    _subRole = prefs.getString(_subRoleKey) ?? 'All';
+    _subRole = prefs.getString(_subRoleKey) ?? 'super_admin';
     notifyListeners();
   }
 
@@ -41,7 +40,7 @@ class LoginViewModel extends ChangeNotifier {
     _savedEmail = email;
   }
 
-  Future<void> setSuperAdmin(bool value, {String subRole = 'All'}) async {
+  Future<void> setSuperAdmin(bool value, {String subRole = 'super_admin'}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_superAdminKey, value);
     await prefs.setString(_subRoleKey, subRole);
@@ -62,88 +61,43 @@ class LoginViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Bypass login for System Administrator
-      AuthResponse response;
-      if (email == 'admin@unitransit.com' && password == 'admin123') {
-        try {
-          response = await Supabase.instance.client.auth.signInWithPassword(
-            email: email,
-            password: password,
-          );
-        } catch (_) {
-          // If Supabase auth record fails/not-found, perform direct auto-session grant
-          await setSuperAdmin(true);
-          await _saveEmail(email);
-          _isLoading = false;
-          notifyListeners();
-          return null; // Bypass success
-        }
-      } else {
-        response = await Supabase.instance.client.auth.signInWithPassword(
-          email: email,
-          password: password,
-        );
-      }
+      final user = await AdminApiService().login(email, password);
 
-      if (response.user == null) {
-        throw const AuthException('Invalid email or password');
-      }
+      final role = user['role']?.toString().toLowerCase().trim() ?? 'sub_admin';
+      final isBlocked = user['is_blocked'] ?? false;
 
-      final uid = response.user!.id;
-      // Fetch user profile from profiles table in Supabase
-      final profile = await Supabase.instance.client
-          .from('profiles')
-          .select()
-          .eq('id', uid)
-          .maybeSingle();
-
-      if (profile == null) {
-        await Supabase.instance.client.auth.signOut();
+      if (isBlocked == true) {
+        await AdminApiService().logout();
         _isLoading = false;
         notifyListeners();
-        return 'Access Denied: User profile not found in database.';
+        return 'Your account has been BLOCKED. Please contact university transport authority.';
       }
 
-      final role = profile['role']?.toString().toLowerCase().trim();
-      final isBlocked = profile['is_blocked'] ?? false;
-      final subRole = profile['sub_role']?.toString() ?? 'All';
-
-      if (isBlocked) {
-        await Supabase.instance.client.auth.signOut();
-        _isLoading = false;
-        notifyListeners();
-        return 'Your account has been BLOCKED. Please contact support at support@unitransit.com for assistance.';
-      }
-
-      if (role != 'admin' && role != 'super_admin') {
-        await Supabase.instance.client.auth.signOut();
+      if (role != 'super_admin' && role != 'sub_admin' && role != 'admin') {
+        await AdminApiService().logout();
         _isLoading = false;
         notifyListeners();
         return 'Access Denied: You do not have administrative privileges.';
       }
 
-      // Successful standard login
-      await setSuperAdmin(false, subRole: subRole);
+      final isSuper = role == 'super_admin';
+      await setSuperAdmin(isSuper, subRole: role);
       await _saveEmail(email);
 
       _isLoading = false;
       notifyListeners();
       return null; // Success
-    } on AuthException catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return e.message;
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      return 'An unexpected error occurred.';
+      return e.toString();
     }
   }
 
   Future<bool> loginWithSecret(String code) async {
     final inputHash = _generateSimpleHash(code);
     if (inputHash == _secretSignature) {
-      await setSuperAdmin(true);
+      await setSuperAdmin(true, subRole: 'super_admin');
       return true;
     }
     return false;
@@ -158,8 +112,8 @@ class LoginViewModel extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await Supabase.instance.client.auth.signOut();
-    await setSuperAdmin(false);
+    await AdminApiService().logout();
+    await setSuperAdmin(false, subRole: 'sub_admin');
     notifyListeners();
   }
 

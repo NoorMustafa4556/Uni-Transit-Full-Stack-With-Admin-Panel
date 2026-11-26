@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 import 'package:provider/provider.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Constants/AppAssets.dart';
@@ -85,6 +84,15 @@ class Sidebar extends StatelessWidget {
                     primaryColor,
                     accentColor,
                   ),
+
+                _buildMenuItem(
+                  context,
+                  20,
+                  Icons.approval_rounded,
+                  'Approvals Queue',
+                  primaryColor,
+                  Colors.amber.shade800,
+                ),
 
                 if (isSuperAdmin ||
                     [

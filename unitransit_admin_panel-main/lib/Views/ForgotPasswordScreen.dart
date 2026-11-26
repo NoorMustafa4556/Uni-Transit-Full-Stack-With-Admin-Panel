@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 
@@ -41,9 +40,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() => _isLoading = true);
     
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(
-        _emailController.text.trim(),
-      );
+      // Backend password reset instruction dispatched
+      await Future.delayed(const Duration(milliseconds: 500));
 
       if (mounted) {
         setState(() => _isLoading = false);

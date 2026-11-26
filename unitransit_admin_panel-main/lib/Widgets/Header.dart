@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:unitransit_admin/ViewModels/DashboardViewModel.dart';
 import 'package:unitransit_admin/ViewModels/LoginViewModel.dart';
-import 'package:unitransit_admin/Views/FaqManagementScreen.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 
 class Header extends StatefulWidget {
   const Header({super.key});
@@ -24,9 +22,9 @@ class _HeaderState extends State<Header> {
     return Container(
       height: 80,
       padding: const EdgeInsets.symmetric(horizontal: 32),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.backgroundLight,
-        border: const Border(bottom: BorderSide(color: AppColors.borderLight)),
+        border: Border(bottom: BorderSide(color: AppColors.borderLight)),
       ),
       child: Row(
         children: [
@@ -37,46 +35,34 @@ class _HeaderState extends State<Header> {
             ),
           
           const Spacer(),
+
+          // Approvals Quick Action Button
+          _buildHeaderAction(
+            context,
+            Icons.approval_rounded,
+            tooltip: 'Approvals Queue',
+            onTap: () => viewModel.setSelectedIndex(20),
+          ),
+
+          const SizedBox(width: 16),
           
           _buildHeaderAction(
             context, 
             Icons.notifications_none_rounded, 
             badgeCount: viewModel.unreadNotificationsCount,
+            tooltip: 'Notifications',
             onTap: () => viewModel.setSelectedIndex(8), // Notifications Index
           ),
           
-          const SizedBox(width: 32),
+          const SizedBox(width: 24),
           
           // User Profile Info
-          Builder(
-            builder: (context) {
-              final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-              if (uid.isEmpty) {
-                return const SizedBox(width: 120);
-              }
-              return StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(uid)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  String name = isSuperAdmin ? 'Super Admin' : 'Admin';
-              if (snapshot.hasData && snapshot.data!.exists) {
-                final data = snapshot.data!.data() as Map<String, dynamic>?;
-                if (data != null) {
-                  final dbName = data['name']?.toString().trim();
-                  if (dbName != null && dbName.isNotEmpty) {
-                    name = dbName;
-                  }
-                }
-              }
-              if (name == (isSuperAdmin ? 'Super Admin' : 'Admin')) {
-                final authUser = FirebaseAuth.instance.currentUser;
-                if (authUser != null && authUser.displayName != null && authUser.displayName!.trim().isNotEmpty) {
-                  name = authUser.displayName!.trim();
-                }
-              }
-              
+          FutureBuilder<Map<String, dynamic>?>(
+            future: AdminApiService().getCurrentUser(),
+            builder: (context, snapshot) {
+              final user = snapshot.data;
+              final name = user?['name']?.toString() ?? (isSuperAdmin ? 'Super Admin' : 'Sub Admin');
+              final role = user?['role']?.toString().toUpperCase() ?? (isSuperAdmin ? 'SUPER ADMIN' : 'SUB ADMIN');
               final displayInitial = name.isNotEmpty ? name[0].toUpperCase() : 'A';
 
               return Row(
@@ -88,19 +74,18 @@ class _HeaderState extends State<Header> {
                       children: [
                         Row(
                           children: [
-                            if (isSuperAdmin)
-                              Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(colors: [Colors.amber, Colors.orange]),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'MASTER',
-                                  style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900),
-                                ),
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isSuperAdmin ? Colors.amber.shade700 : AppColors.primaryNavy,
+                                borderRadius: BorderRadius.circular(4),
                               ),
+                              child: Text(
+                                role,
+                                style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900),
+                              ),
+                            ),
                             Text(name, style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.bold, fontSize: 14)),
                           ],
                         ),
@@ -128,10 +113,8 @@ class _HeaderState extends State<Header> {
                 ],
               );
             },
-          );
-        },
-      ),
-    ],
+          ),
+        ],
       ),
     );
   }
@@ -164,45 +147,63 @@ class _HeaderState extends State<Header> {
         return 'Bus Schedules';
       case 12:
         return 'Emergency SOS';
+      case 13:
+        return 'Assign Routes';
+      case 14:
+        return 'Buses';
+      case 15:
+        return 'Audit Logs';
+      case 16:
+        return 'Analytics';
+      case 17:
+        return 'App Configuration';
+      case 18:
+        return 'Maintenance';
+      case 19:
+        return 'Safety Alerts';
+      case 20:
+        return 'Higher Authority Approvals';
       default:
         return 'Admin Panel';
     }
   }
 
-
-  Widget _buildHeaderAction(BuildContext context, IconData icon, {int badgeCount = 0, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.cardWhite,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.borderLight),
+  Widget _buildHeaderAction(BuildContext context, IconData icon, {int badgeCount = 0, String? tooltip, VoidCallback? onTap}) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.cardWhite,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Icon(icon, color: AppColors.textSecondary, size: 22),
             ),
-            child: Icon(icon, color: AppColors.textSecondary, size: 22),
-          ),
-          if (badgeCount > 0)
-            Positioned(
-              top: -5,
-              right: -5,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
-                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                child: Center(
-                  child: Text(
-                    badgeCount.toString(),
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+            if (badgeCount > 0)
+              Positioned(
+                top: -5,
+                right: -5,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                  child: Center(
+                    child: Text(
+                      badgeCount.toString(),
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

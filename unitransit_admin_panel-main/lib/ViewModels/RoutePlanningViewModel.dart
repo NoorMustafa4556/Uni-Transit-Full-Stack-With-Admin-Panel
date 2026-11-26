@@ -4,14 +4,60 @@ import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Models/BusScheduleModel.dart';
 import 'package:unitransit_admin/Models/HubModel.dart';
 import 'package:unitransit_admin/Models/StopModel.dart';
+import 'package:unitransit_admin/Models/RouteCategoryModel.dart';
 
 class RoutePlanningViewModel extends ChangeNotifier {
   final FirebaseService _firebaseService;
+
+  List<RouteCategoryModel> _routeCategories = [];
+  List<RouteCategoryModel> get routeCategories => _routeCategories;
+
+  List<RouteTagModel> _routeTags = [];
+  List<RouteTagModel> get routeTags => _routeTags;
+
+  bool _isOutOfCityEnabled = true;
+  bool get isOutOfCityEnabled => _isOutOfCityEnabled;
 
   RoutePlanningViewModel(this._firebaseService) {
     // Add listeners for smart parsing
     latController.addListener(() => _smartParse(latController, lngController));
     stopLatController.addListener(() => _smartParse(stopLatController, stopLngController));
+    fetchCategoriesAndTags();
+  }
+
+  Future<void> fetchCategoriesAndTags() async {
+    try {
+      _routeCategories = await _firebaseService.getRouteCategories();
+      final outOfCityCat = _routeCategories.firstWhere(
+        (c) => c.slug == 'out_of_city' || c.isOutOfCity,
+        orElse: () => RouteCategoryModel(id: 0, slug: 'out_of_city', name: 'Out of City', isActive: true),
+      );
+      _isOutOfCityEnabled = outOfCityCat.isActive;
+      _routeTags = await _firebaseService.getRouteTags();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> toggleOutOfCity(bool value) async {
+    _isOutOfCityEnabled = value;
+    notifyListeners();
+
+    try {
+      final outOfCityCat = _routeCategories.firstWhere(
+        (c) => c.slug == 'out_of_city' || c.isOutOfCity,
+        orElse: () => RouteCategoryModel(id: 0, slug: 'out_of_city', name: 'Out of City', isActive: true),
+      );
+      if (outOfCityCat.id > 0) {
+        await _firebaseService.updateRouteCategory(outOfCityCat.id, name: outOfCityCat.name, isActive: value);
+      }
+      await fetchCategoriesAndTags();
+    } catch (_) {}
+  }
+
+  Future<void> addRouteTag(String code, String label, String colorHex) async {
+    final newTag = RouteTagModel(id: 0, code: code, label: label, colorHex: colorHex);
+    await _firebaseService.addRouteTag(newTag);
+    await fetchCategoriesAndTags();
   }
 
   void _smartParse(TextEditingController latCtrl, TextEditingController lngCtrl) {

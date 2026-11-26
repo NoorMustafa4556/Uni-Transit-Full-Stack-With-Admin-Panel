@@ -1,5 +1,3 @@
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-
 class AppInfoModel {
   final String appName;
   final String appTagline;
@@ -50,17 +48,15 @@ class AppInfoModel {
     required this.contributors,
   });
 
-  factory AppInfoModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-    
+  factory AppInfoModel.fromMap(Map<String, dynamic> data) {
     return AppInfoModel(
-      appName: data['appName'] ?? 'UniTransit',
-      appTagline: data['appTagline'] ?? 'Smart University Transport System',
-      visionHeader: data['visionHeader'] ?? 'PROJECT VISION',
+      appName: data['appName'] ?? data['app_name'] ?? 'UniTransit',
+      appTagline: data['appTagline'] ?? data['app_tagline'] ?? 'Smart University Transport System',
+      visionHeader: data['visionHeader'] ?? data['vision_header'] ?? 'PROJECT VISION',
       vision: data['vision'] ?? '',
-      version: data['version'] ?? '',
-      university: data['university'] ?? '',
-      appLogoUrl: data['appLogoUrl'] ?? '',
+      version: data['version'] ?? '2.0.0 (Django REST)',
+      university: data['university'] ?? 'The Islamia University of Bahawalpur',
+      appLogoUrl: data['appLogoUrl'] ?? data['app_logo_url'] ?? '',
       
       // Mobile Defaults
       appPrimaryColor: data['appPrimaryColor'] ?? '#1A237E',
@@ -82,6 +78,18 @@ class AppInfoModel {
           .map((item) => ContributorModel.fromMap(Map<String, dynamic>.from(item)))
           .toList(),
     );
+  }
+
+  factory AppInfoModel.fromFirestore(dynamic doc) {
+    if (doc is Map<String, dynamic>) {
+      return AppInfoModel.fromMap(doc);
+    }
+    try {
+      final map = doc.data() as Map<String, dynamic>? ?? {};
+      return AppInfoModel.fromMap(map);
+    } catch (_) {
+      return AppInfoModel.fromMap({});
+    }
   }
 
   Map<String, dynamic> toMap() {

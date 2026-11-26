@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Models/NotificationModel.dart';
 import 'package:unitransit_admin/Models/SupportTicketModel.dart';
@@ -204,14 +203,11 @@ class DashboardViewModel extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Separately monitor admins for instant dashboard update
-    Supabase.instance.client
-        .from('profiles')
-        .select().eq('role', 'Admin').asStream()
-        .listen((event) {
-          totalAdmins = event.length;
-          notifyListeners();
-        });
+    // Monitor admins for dashboard update
+    _firebaseService.getAdminsCount().then((count) {
+      totalAdmins = count;
+      notifyListeners();
+    });
   }
 
   void _updateRecentActivities() {

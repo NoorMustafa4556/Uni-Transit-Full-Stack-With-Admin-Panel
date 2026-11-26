@@ -1,4 +1,5 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
+import 'package:unitransit_admin/Views/ApprovalsScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
@@ -19,8 +20,6 @@ import 'package:unitransit_admin/Views/GenderConfigScreen.dart';
 import 'package:unitransit_admin/Views/AdminsManagementScreen.dart';
 import 'package:unitransit_admin/Views/SchedulesScreen.dart';
 import 'package:unitransit_admin/Views/EmergencyAlertsScreen.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 import 'package:unitransit_admin/ViewModels/LoginViewModel.dart';
 import 'package:unitransit_admin/Views/TripHistoryScreen.dart';
 import 'package:unitransit_admin/Views/AssignRoutesScreen.dart';
@@ -190,6 +189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           AppConfigScreen(),
                           MaintenanceScreen(),
                           SafetyAlertsScreen(),
+                          ApprovalsScreen(),
                         ],
                       ),
                     ),
@@ -342,36 +342,11 @@ class DashboardOverview extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        StreamBuilder<DocumentSnapshot>(
-                          stream:
-                              FirebaseFirestore.instance
-                                  .collection('users')
-                                  .doc(Supabase.instance.client.auth.currentUser?.id)
-                                  .snapshots(),
+                        FutureBuilder<Map<String, dynamic>?>(
+                          future: AdminApiService().getCurrentUser(),
                           builder: (context, snapshot) {
-                            String displayName =
-                                isSuperAdmin ? "Super Admin" : "Admin";
-                            if (snapshot.hasData && snapshot.data!.exists) {
-                              final data =
-                                  snapshot.data!.data()
-                                      as Map<String, dynamic>?;
-                              if (data != null) {
-                                final dbName = data['name']?.toString().trim();
-                                if (dbName != null && dbName.isNotEmpty) {
-                                  displayName = dbName;
-                                }
-                              }
-                            }
-                            if (displayName ==
-                                (isSuperAdmin ? "Super Admin" : "Admin")) {
-                              final authUser =
-                                  Supabase.instance.client.auth.currentUser;
-                              if (authUser != null &&
-                                  (authUser.userMetadata?['name'] ?? '') != null &&
-                                  (authUser.userMetadata?['name'] ?? '')!.trim().isNotEmpty) {
-                                displayName = (authUser.userMetadata?['name'] ?? '')!.trim();
-                              }
-                            }
+                            final displayName = snapshot.data?['name']?.toString() ??
+                                (isSuperAdmin ? "Super Admin" : "Admin");
                             return Text(
                               '$greeting, $displayName 👋',
                               style: TextStyle(
@@ -724,13 +699,8 @@ class AdminTeamSection extends StatelessWidget {
                 ],
               ),
           const SizedBox(height: 20),
-          StreamBuilder<QuerySnapshot>(
-            stream:
-                FirebaseFirestore.instance
-                    .collection('users')
-                    .where('role', isEqualTo: 'Admin')
-                    .limit(5)
-                    .snapshots(),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: AdminApiService().getAllNotificationUsers(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
@@ -739,18 +709,23 @@ class AdminTeamSection extends StatelessWidget {
                   ),
                 );
               }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              final allUsers = snapshot.data ?? [];
+              final admins = allUsers.where((u) {
+                final r = (u['role'] ?? '').toString().toLowerCase();
+                return r == 'super_admin' || r == 'sub_admin' || r == 'admin';
+              }).take(5).toList();
+
+              if (admins.isEmpty) {
                 return const Text(
                   'No other admins added yet.',
                   style: TextStyle(color: AppColors.textSecondary),
                 );
               }
-              final admins = snapshot.data!.docs;
               return Wrap(
                 spacing: 12,
                 runSpacing: 12,
                 children: List.generate(admins.length, (i) {
-                  final admin = admins[i].data() as Map<String, dynamic>;
+                  final admin = admins[i];
                   final name = admin['name'] ?? 'Admin';
                   final email = admin['email'] ?? '';
                   final color = _avatarColors[i % _avatarColors.length];

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
 import 'package:unitransit_admin/Views/LoginScreen.dart';
 import 'package:unitransit_admin/Views/DashboardScreen.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,7 +21,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 1500),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -38,18 +38,19 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   void _navigateToNext() async {
-    await Future.delayed(const Duration(seconds: 4));
+    await Future.delayed(const Duration(seconds: 2));
     if (mounted) {
-      final user = FirebaseAuth.instance.currentUser;
-      Widget nextScreen = user != null ? const DashboardScreen() : const LoginScreen();
+      final user = await AdminApiService().getCurrentUser();
+      final Widget nextScreen = user != null ? const DashboardScreen() : const LoginScreen();
 
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
-          transitionDuration: const Duration(milliseconds: 800),
+          transitionDuration: const Duration(milliseconds: 600),
         ),
       );
     }
@@ -63,65 +64,78 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final primaryColor = theme.primaryColor;
-    final accentColor = theme.colorScheme.secondary;
-
     return Scaffold(
-      backgroundColor: primaryColor,
-      body: Stack(
-        children: [
-          Positioned(
-            top: -100,
-            right: -100,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: accentColor.withOpacity(0.1),
-              ),
-            ),
-          ),
-          Center(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: ScaleTransition(
-                scale: _scaleAnimation,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
+      backgroundColor: AppColors.backgroundLight,
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: AppColors.cardWhite,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Image.asset(
                       'assets/images/unitransit_logo.png',
-                      width: 220,
-                      height: 220,
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.directions_bus_rounded,
+                          size: 60,
+                          color: AppColors.primaryNavy,
+                        );
+                      },
                     ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Uni-Transit',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 42,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'ADMIN PANEL',
-                      style: TextStyle(
-                        color: accentColor.withOpacity(0.8),
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 4,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Uni-Transit Admin',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Smart Fleet Control Center',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryNavy),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

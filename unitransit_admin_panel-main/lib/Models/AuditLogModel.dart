@@ -1,5 +1,3 @@
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-
 class AuditLogModel {
   final String id;
   final String adminId;
@@ -21,18 +19,44 @@ class AuditLogModel {
     this.ipAddress,
   });
 
-  factory AuditLogModel.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+  factory AuditLogModel.fromMap(Map<String, dynamic> data, {String? id}) {
+    DateTime ts;
+    try {
+      ts = data['timestamp'] != null
+          ? (data['timestamp'] is DateTime
+              ? data['timestamp'] as DateTime
+              : DateTime.parse(data['timestamp'].toString()))
+          : (data['created_at'] != null
+              ? DateTime.parse(data['created_at'].toString())
+              : DateTime.now());
+    } catch (_) {
+      ts = DateTime.now();
+    }
+
     return AuditLogModel(
-      id: doc.id,
-      adminId: data['adminId'] ?? '',
-      adminName: data['adminName'] ?? 'Unknown Admin',
+      id: id ?? data['id']?.toString() ?? '',
+      adminId: data['adminId']?.toString() ?? data['admin_id']?.toString() ?? data['admin']?.toString() ?? '',
+      adminName: data['adminName'] ?? data['admin_name'] ?? 'Unknown Admin',
       action: data['action'] ?? '',
       target: data['target'] ?? '',
-      timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      timestamp: ts,
       details: data['details'],
-      ipAddress: data['ipAddress'],
+      ipAddress: data['ipAddress'] ?? data['ip_address'],
     );
+  }
+
+  // Backward compatibility factory
+  factory AuditLogModel.fromFirestore(dynamic doc) {
+    if (doc is Map<String, dynamic>) {
+      return AuditLogModel.fromMap(doc);
+    }
+    // Handle mock or custom doc
+    try {
+      final map = doc.data() as Map<String, dynamic>;
+      return AuditLogModel.fromMap(map, id: doc.id?.toString());
+    } catch (_) {
+      return AuditLogModel.fromMap({});
+    }
   }
 
   Map<String, dynamic> toMap() {
@@ -41,7 +65,7 @@ class AuditLogModel {
       'adminName': adminName,
       'action': action,
       'target': target,
-      'timestamp': FieldValue.serverTimestamp(),
+      'timestamp': timestamp.toIso8601String(),
       'details': details,
       'ipAddress': ipAddress,
     };

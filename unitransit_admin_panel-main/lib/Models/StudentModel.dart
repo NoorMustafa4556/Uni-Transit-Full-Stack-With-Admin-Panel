@@ -1,5 +1,3 @@
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-
 class StudentModel {
   final String id;
   final String name;
@@ -44,32 +42,47 @@ class StudentModel {
       'semester': semester,
       'phoneNumber': phoneNumber,
       'phone': phoneNumber,
-      'role': 'Student',
+      'role': 'student',
       'profileImage': profileImage,
       'status': status,
       'isVerified': isVerified,
       'isBlocked': isBlocked,
-      'createdAt': Timestamp.fromDate(createdAt),
+      'createdAt': createdAt.toIso8601String(),
     };
   }
 
   factory StudentModel.fromMap(Map<String, dynamic> map, {String? docId}) {
+    DateTime parsedCreatedAt;
+    try {
+      if (map['createdAt'] != null) {
+        parsedCreatedAt = map['createdAt'] is DateTime
+            ? map['createdAt'] as DateTime
+            : DateTime.parse(map['createdAt'].toString());
+      } else if (map['created_at'] != null) {
+        parsedCreatedAt = DateTime.parse(map['created_at'].toString());
+      } else {
+        parsedCreatedAt = DateTime.now();
+      }
+    } catch (_) {
+      parsedCreatedAt = DateTime.now();
+    }
+
+    final profile = map['student_profile'] as Map<String, dynamic>? ?? {};
+
     return StudentModel(
-      id: map['id'] ?? map['uid'] ?? docId ?? '',
-      name: map['name'] ?? '',
-      email: map['email'] ?? '',
-      studentId: map['studentId'] ?? map['rollNo'] ?? 'N/A',
-      regNo: map['regNo'] ?? 'N/A',
-      department: map['department'] ?? 'N/A',
-      semester: map['semester'] ?? 'N/A',
-      phoneNumber: map['phoneNumber'] ?? map['phone'] ?? 'N/A',
-      profileImage: map['profileImage'] ?? map['profileImageUrl'] ?? '',
-      status: map['status'] ?? 'Offline',
-      isVerified: map['isVerified'] ?? true,
-      isBlocked: map['isBlocked'] ?? false,
-      createdAt: map['createdAt'] != null 
-          ? (map['createdAt'] is Timestamp ? (map['createdAt'] as Timestamp).toDate() : DateTime.now()) 
-          : DateTime.now(),
+      id: (map['id'] ?? map['uid'] ?? docId ?? '').toString(),
+      name: (map['name'] ?? '').toString(),
+      email: (map['email'] ?? '').toString(),
+      studentId: (map['studentId'] ?? map['rollNo'] ?? profile['roll_no'] ?? 'N/A').toString(),
+      regNo: (map['regNo'] ?? profile['registration_no'] ?? 'N/A').toString(),
+      department: (map['department'] ?? profile['department'] ?? 'N/A').toString(),
+      semester: (map['semester'] ?? profile['semester']?.toString() ?? 'N/A').toString(),
+      phoneNumber: (map['phoneNumber'] ?? map['phone'] ?? 'N/A').toString(),
+      profileImage: (map['profileImage'] ?? map['profileImageUrl'] ?? map['profile_image'] ?? '').toString(),
+      status: (map['status'] ?? (map['is_verified'] == true ? 'Active' : 'Offline')).toString(),
+      isVerified: map['isVerified'] ?? map['is_verified'] ?? true,
+      isBlocked: map['isBlocked'] ?? map['is_blocked'] ?? false,
+      createdAt: parsedCreatedAt,
     );
   }
 

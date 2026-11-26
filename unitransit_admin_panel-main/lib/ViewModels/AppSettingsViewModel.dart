@@ -1,13 +1,13 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../Core/Services/FirebaseService.dart';
-import '../Models/AppInfoModel.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
+import 'package:unitransit_admin/Core/Network/ApiClient.dart';
+import 'package:unitransit_admin/Core/Network/ApiConfig.dart';
+import 'package:unitransit_admin/Core/Services/AdminApiService.dart';
+import 'package:unitransit_admin/Models/AppInfoModel.dart';
 
 class AppSettingsViewModel extends ChangeNotifier {
-  final FirebaseService _firebaseService;
+  final AdminApiService _apiService;
   AppInfoModel? _appInfo;
   
   bool _isLoading = false;
@@ -48,7 +48,7 @@ class AppSettingsViewModel extends ChangeNotifier {
   String get adminTextPrimaryColor => _tempAdminTextPrimaryColor ?? _appInfo?.adminTextPrimaryColor ?? '0xFF2C3E50';
   String get adminTextSecondaryColor => _tempAdminTextSecondaryColor ?? _appInfo?.adminTextSecondaryColor ?? '0xFF7F8C8D';
 
-  AppSettingsViewModel(this._firebaseService) {
+  AppSettingsViewModel(this._apiService) {
     _fetchAppInfo();
   }
 
@@ -56,17 +56,18 @@ class AppSettingsViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final res = await Supabase.instance.client
-          .from('app_settings')
-          .select()
-          .eq('key', 'about')
-          .maybeSingle();
+      final res = await ApiClient().get(
+        ApiConfig.config,
+        queryParameters: {'key': 'about'},
+      );
 
-      if (res != null) {
-        final Map<String, dynamic> data = Map<String, dynamic>.from(res['value'] as Map);
-        final doc = DocumentSnapshot('about', toCamelCase(data));
-        _appInfo = AppInfoModel.fromFirestore(doc);
-        _syncTempColors();
+      if (res.statusCode == 200 && res.data is Map) {
+        final val = res.data['value_json'];
+        if (val is Map) {
+          final Map<String, dynamic> data = Map<String, dynamic>.from(val);
+          _appInfo = AppInfoModel.fromMap(data);
+          _syncTempColors();
+        }
       }
     } catch (e) {
       debugPrint('Error fetching app info: $e');
@@ -145,7 +146,7 @@ class AppSettingsViewModel extends ChangeNotifier {
         
         contributors: _appInfo?.contributors ?? [],
       );
-      await _firebaseService.updateAppInfo(updatedInfo.toMap());
+      await _apiService.updateAppInfo(updatedInfo.toMap());
       _appInfo = updatedInfo;
       _syncTempColors();
     } catch (e) {
@@ -166,7 +167,7 @@ class AppSettingsViewModel extends ChangeNotifier {
         _pickedImageBytes = fileBytes;
         notifyListeners();
         String fileName = 'app_logo_${DateTime.now().millisecondsSinceEpoch}.png';
-        String url = await _firebaseService.uploadImage(fileBytes, 'app_assets/$fileName');
+        String url = await _apiService.uploadImage(fileBytes, 'app_assets/$fileName');
         if (_appInfo != null) {
           final updatedInfo = AppInfoModel(
             appName: _appInfo!.appName,
@@ -190,7 +191,7 @@ class AppSettingsViewModel extends ChangeNotifier {
             adminTextSecondaryColor: _appInfo!.adminTextSecondaryColor,
             contributors: _appInfo!.contributors,
           );
-          await _firebaseService.updateAppInfo(updatedInfo.toMap());
+          await _apiService.updateAppInfo(updatedInfo.toMap());
           _appInfo = updatedInfo;
         }
       } catch (e) { debugPrint('Error uploading logo: $e'); }

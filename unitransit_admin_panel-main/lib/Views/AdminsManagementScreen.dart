@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:unitransit_admin/Core/Network/ApiClient.dart';
+import 'package:unitransit_admin/Core/Network/ApiConfig.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
@@ -18,6 +19,17 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _isCreating = false;
+
+  Future<List<Map<String, dynamic>>> _loadAdmins() async {
+    final res = await ApiClient().get(ApiConfig.adminUsers);
+    if (res.statusCode == 200 && res.data is List) {
+      return (res.data as List).map((row) => Map<String, dynamic>.from(row as Map)).where((u) {
+        final role = (u['role'] ?? '').toString().toLowerCase();
+        return role == 'super_admin' || role == 'sub_admin' || role == 'admin';
+      }).toList();
+    }
+    return [];
+  }
 
   @override
   void dispose() {
@@ -106,10 +118,8 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
 
   Widget _buildStatsRow(BuildContext context) {
     final isMobile = AppResponsiveUtil.isMobile(context);
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Supabase.instance.client
-          .from('profiles')
-          .select().eq('role', 'Admin').asStream(),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _loadAdmins(),
       builder: (context, snapshot) {
         int total = snapshot.data?.length ?? 0;
         if (isMobile) {
@@ -220,10 +230,8 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
             BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 15, offset: const Offset(0, 8)),
           ],
         ),
-        child: StreamBuilder<List<Map<String, dynamic>>>(
-          stream: Supabase.instance.client
-              .from('profiles')
-              .select().eq('role', 'Admin').asStream(),
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _loadAdmins(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -264,7 +272,7 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
                 return _AdminRow(
                   admin: admin,
                   adminId: (admin['id'] ?? '').toString(),
-                  onResetPassword: (email) => _resetPassword(context, email),
+                  onResetPassword: (email) => _resetPassword(context, email, adminId: admin['id']?.toString()),
                   onDelete: (id, name) => _confirmDelete(context, id, name),
                 );
               },
@@ -275,12 +283,15 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
     );
   }
 
-  void _resetPassword(BuildContext context, String email) async {
+  void _resetPassword(BuildContext context, String email, {String? adminId}) async {
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      final numId = int.tryParse(adminId ?? '');
+      if (numId != null && numId > 0) {
+        await ApiClient().post(ApiConfig.resetUserPassword(numId), data: {'new_password': 'AdminPassword123'});
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Password reset email sent to $email'), backgroundColor: Colors.green),
+          SnackBar(content: Text('Password reset for $email (Temporary: AdminPassword123)'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -446,21 +457,16 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
 
   Future<void> _createAdmin(BuildContext context, String name, String email, String password, String subRole) async {
     final firebaseService = context.read<FirebaseService>();
-    
-    // 1. Create in Firebase Auth
-    final uid = await firebaseService.createUserAuth(email, password);
-    
-    // 2. Save Metadata to Supabase profiles table using the same UID
-    await Supabase.instance.client.from('profiles').upsert({
-      'id': uid,
+    final role = subRole.toLowerCase().contains('super') ? 'super_admin' : 'sub_admin';
+    await ApiClient().post(ApiConfig.adminUsers, data: {
       'name': name,
       'email': email,
-      'role': 'Admin',
-      'sub_role': subRole,
-      'created_at': DateTime.now().toIso8601String(),
+      'password': password,
+      'role': role,
+      'is_verified': true,
     });
-
     await firebaseService.logActivity(action: 'Created Admin', target: 'Admin: $name ($subRole)');
+    setState(() {});
   }
 
   void _confirmDelete(BuildContext context, String id, String name) {
@@ -474,10 +480,14 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
-              await Supabase.instance.client.from('profiles').delete().eq('id', id);
+              final numId = int.tryParse(id) ?? 0;
+              if (numId > 0) {
+                await ApiClient().delete(ApiConfig.adminUserDetail(numId));
+              }
               if (context.mounted) {
                 context.read<FirebaseService>().logActivity(action: 'Revoked Admin Access', target: 'Admin: $name');
                 Navigator.pop(context);
+                setState(() {});
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),

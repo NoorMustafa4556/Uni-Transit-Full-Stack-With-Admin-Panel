@@ -41,7 +41,8 @@ dependencies:
   responsive_builder: ^0.7.1
   latlong2: ^0.9.1
   flutter_map: ^8.2.2
-  supabase_flutter: ^2.8.0
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.1
   shared_preferences: ^2.5.2
   image_picker: ^1.0.7
   cached_network_image: ^3.4.1
@@ -49,6 +50,7 @@ dependencies:
   flutter_colorpicker: ^1.1.0
   intl_phone_field: ^3.2.0
   intl: ^0.19.0
+  url_launcher: ^6.3.1
 
 dependency_overrides:
   vector_math: ^2.3.0

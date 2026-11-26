@@ -4,7 +4,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
+import 'package:unitransit_admin/Models/DriverModel.dart';
+import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:unitransit_admin/Models/BusScheduleModel.dart';
@@ -1235,47 +1236,26 @@ class _FleetOperationsScreenState extends State<FleetOperationsScreen>
       );
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('drivers').doc(driverId).snapshots(),
+    return FutureBuilder<List<DriverModel>>(
+      future: context.read<FirebaseService>().fetchDrivers(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8.0),
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
+        DriverModel? driver;
+        if (snapshot.hasData) {
+          final list = snapshot.data!;
+          for (final d in list) {
+            if (d.id == driverId || d.name == bus['driverName']) {
+              driver = d;
+              break;
+            }
+          }
         }
-        if (!snapshot.hasData || !snapshot.data!.exists) {
-          return _buildDriverInfoRow(
-            name: bus['driverName'] ?? 'No Name',
-            phone: 'N/A',
-            email: 'N/A',
-            experience: 'N/A',
-            profileUrl: null,
-            isVerified: false,
-          );
-        }
-
-        final driverData = snapshot.data!.data() ?? {};
-        final name = driverData['name']?.toString() ?? bus['driverName'] ?? 'No Name';
-        final phone = driverData['phoneNumber']?.toString() ?? 'N/A';
-        final email = driverData['email']?.toString() ?? 'N/A';
-        final experience = driverData['experience']?.toString() ?? 'N/A';
-        final profileUrl = driverData['profileUrl']?.toString();
-        final isVerified = driverData['isVerified'] as bool? ?? false;
-
         return _buildDriverInfoRow(
-          name: name,
-          phone: phone,
-          email: email,
-          experience: experience,
-          profileUrl: profileUrl,
-          isVerified: isVerified,
+          name: driver?.name ?? bus['driverName'] ?? 'No Name',
+          phone: driver?.phoneNumber ?? 'N/A',
+          email: driver?.email ?? 'N/A',
+          experience: driver?.experience ?? 'N/A',
+          profileUrl: driver?.profileUrl,
+          isVerified: driver?.isVerified ?? false,
         );
       },
     );

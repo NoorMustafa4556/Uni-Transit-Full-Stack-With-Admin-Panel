@@ -1,5 +1,3 @@
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-
 class DriverModel {
   final String id;
   final String name;
@@ -49,7 +47,7 @@ class DriverModel {
       'email': email,
       'cnic': cnic,
       'licenseNumber': licenseNumber,
-      'licenseExpiry': Timestamp.fromDate(licenseExpiry),
+      'licenseExpiry': licenseExpiry.toIso8601String(),
       'assignedBus': assignedBus,
       'assignedRoutes': assignedRoutes,
       'experience': experience,
@@ -60,30 +58,50 @@ class DriverModel {
       'licenseImageUrl': licenseImageUrl,
       'isVerified': isVerified,
       'isBlocked': isBlocked,
-      'createdAt': Timestamp.fromDate(createdAt),
+      'createdAt': createdAt.toIso8601String(),
     };
   }
 
   factory DriverModel.fromMap(Map<String, dynamic> map) {
+    DateTime parsedExpiry;
+    try {
+      final raw = map['licenseExpiry'] ?? map['license_expiry'];
+      parsedExpiry = raw != null ? DateTime.parse(raw.toString()) : DateTime.now().add(const Duration(days: 365));
+    } catch (_) {
+      parsedExpiry = DateTime.now().add(const Duration(days: 365));
+    }
+
+    DateTime parsedCreated;
+    try {
+      final raw = map['createdAt'] ?? map['created_at'];
+      parsedCreated = raw != null ? DateTime.parse(raw.toString()) : DateTime.now();
+    } catch (_) {
+      parsedCreated = DateTime.now();
+    }
+
+    final driverProfile = map['driver_profile'] as Map<String, dynamic>? ?? {};
+
     return DriverModel(
-      id: map['id'] ?? '',
-      name: map['name'] ?? '',
-      phoneNumber: map['phoneNumber'] ?? '',
-      email: map['email'] ?? '',
-      cnic: map['cnic'] ?? '',
-      licenseNumber: map['licenseNumber'] ?? '',
-      licenseExpiry: (map['licenseExpiry'] as Timestamp).toDate(),
-      assignedBus: map['assignedBus'] ?? '',
-      assignedRoutes: map['assignedRoutes'] != null ? List<String>.from(map['assignedRoutes']) : const [],
-      experience: map['experience'] ?? '',
-      status: map['status'] ?? 'Offline',
-      cnicFrontUrl: map['cnicFrontUrl'],
-      cnicBackUrl: map['cnicBackUrl'],
-      profileUrl: map['profileUrl'],
-      licenseImageUrl: map['licenseImageUrl'],
-      isVerified: map['isVerified'] ?? false,
-      isBlocked: map['isBlocked'] ?? false,
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
+      id: (map['id'] ?? map['uid'] ?? '').toString(),
+      name: (map['name'] ?? '').toString(),
+      phoneNumber: (map['phoneNumber'] ?? map['phone'] ?? '').toString(),
+      email: (map['email'] ?? '').toString(),
+      cnic: (map['cnic'] ?? driverProfile['cnic'] ?? '').toString(),
+      licenseNumber: (map['licenseNumber'] ?? driverProfile['license_number'] ?? '').toString(),
+      licenseExpiry: parsedExpiry,
+      assignedBus: (map['assignedBus'] ?? driverProfile['assigned_bus'] ?? '').toString(),
+      assignedRoutes: map['assignedRoutes'] != null
+          ? List<String>.from(map['assignedRoutes'])
+          : (map['assigned_routes'] != null ? List<String>.from(map['assigned_routes']) : const []),
+      experience: (map['experience'] ?? driverProfile['experience'] ?? '3+ Years').toString(),
+      status: (map['status'] ?? (map['is_verified'] == true ? 'Online' : 'Offline')).toString(),
+      cnicFrontUrl: map['cnicFrontUrl'] ?? driverProfile['cnic_front_image'],
+      cnicBackUrl: map['cnicBackUrl'] ?? driverProfile['cnic_back_image'],
+      profileUrl: map['profileUrl'] ?? map['profile_image'],
+      licenseImageUrl: map['licenseImageUrl'] ?? driverProfile['license_image'],
+      isVerified: map['isVerified'] ?? map['is_verified'] ?? false,
+      isBlocked: map['isBlocked'] ?? map['is_blocked'] ?? false,
+      createdAt: parsedCreated,
     );
   }
 

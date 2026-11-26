@@ -1,5 +1,3 @@
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
-
 class SupportTicketModel {
   final String id;
   final String email;
@@ -12,6 +10,7 @@ class SupportTicketModel {
   final String userId;
   final String userName;
   final String userRole;
+  final int? tripId;
   final String? adminReply;
   final bool userRead;
   final bool adminRead;
@@ -28,69 +27,57 @@ class SupportTicketModel {
     required this.userId,
     required this.userName,
     required this.userRole,
+    this.tripId,
     this.adminReply,
     this.userRead = false,
     this.adminRead = false,
   });
 
   factory SupportTicketModel.fromMap(String id, Map<String, dynamic> map) {
+    DateTime ts;
+    try {
+      final raw = map['timestamp'] ?? map['created_at'];
+      ts = raw != null ? DateTime.parse(raw.toString()) : DateTime.now();
+    } catch (_) {
+      ts = DateTime.now();
+    }
+
     return SupportTicketModel(
-      id: id,
-      email: map['email'] ?? '',
-      issue: map['issue'] ?? 'No issue description provided',
-      name: map['name'] ?? 'Anonymous',
-      phone: map['phone'] ?? 'No phone',
-      status: map['status'] ?? 'Pending',
-      timestamp: (map['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      userEmail: map['userEmail'] ?? '',
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? '',
-      userRole: map['userRole'] ?? 'Unknown',
-      adminReply: map['adminReply'],
-      userRead: map['userRead'] ?? false,
-      adminRead: map['adminRead'] ?? false,
+      id: (id.isNotEmpty ? id : (map['id'] ?? '')).toString(),
+      email: (map['email'] ?? map['userEmail'] ?? '').toString(),
+      issue: (map['issue'] ?? 'No issue description provided').toString(),
+      name: (map['name'] ?? map['userName'] ?? map['user_name'] ?? 'Anonymous').toString(),
+      phone: (map['phone'] ?? 'No phone').toString(),
+      status: (map['status'] ?? 'pending').toString(),
+      timestamp: ts,
+      userEmail: (map['userEmail'] ?? map['email'] ?? '').toString(),
+      userId: (map['userId'] ?? map['user'] ?? '').toString(),
+      userName: (map['userName'] ?? map['user_name'] ?? 'Anonymous').toString(),
+      userRole: (map['userRole'] ?? map['user_role'] ?? 'Student').toString(),
+      tripId: map['trip'] != null ? int.tryParse(map['trip'].toString()) : null,
+      adminReply: map['adminReply'] ?? map['admin_reply'],
+      userRead: map['userRead'] ?? map['user_read'] ?? false,
+      adminRead: map['adminRead'] ?? map['admin_read'] ?? false,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'email': email,
       'issue': issue,
       'name': name,
       'phone': phone,
       'status': status,
-      'timestamp': Timestamp.fromDate(timestamp),
+      'timestamp': timestamp.toIso8601String(),
       'userEmail': userEmail,
       'userId': userId,
       'userName': userName,
       'userRole': userRole,
+      'trip': tripId,
       'adminReply': adminReply,
       'userRead': userRead,
       'adminRead': adminRead,
     };
-  }
-
-  SupportTicketModel copyWith({
-    String? status,
-    String? adminReply,
-    bool? userRead,
-    bool? adminRead,
-  }) {
-    return SupportTicketModel(
-      id: id,
-      email: email,
-      issue: issue,
-      name: name,
-      phone: phone,
-      status: status ?? this.status,
-      timestamp: timestamp,
-      userEmail: userEmail,
-      userId: userId,
-      userName: userName,
-      userRole: userRole,
-      adminReply: adminReply ?? this.adminReply,
-      userRead: userRead ?? this.userRead,
-      adminRead: adminRead ?? this.adminRead,
-    );
   }
 }

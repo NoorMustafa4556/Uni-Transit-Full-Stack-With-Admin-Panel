@@ -49,7 +49,7 @@ class DriversViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Create Auth first to get the UID via Supabase
+      // 1. Create Auth first to get the UID via Django
       final String uid = await _firebaseService.createUserAuth(email, password);
       
       String? profileUrl;
@@ -91,7 +91,7 @@ class DriversViewModel extends ChangeNotifier {
         createdAt: DateTime.now(),
       );
 
-      // 3. Save to drivers/profiles tables in Supabase
+      // 3. Save to backend database
       await _firebaseService.addDriver(newDriver);
 
     } catch (e) {

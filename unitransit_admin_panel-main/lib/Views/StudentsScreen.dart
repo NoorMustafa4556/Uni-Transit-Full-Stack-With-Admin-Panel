@@ -8,7 +8,6 @@ import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:unitransit_admin/ViewModels/DashboardViewModel.dart';
 import 'package:unitransit_admin/ViewModels/StudentsViewModel.dart';
 import 'package:unitransit_admin/Core/Utils/Animations.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
 
 class StudentsScreen extends StatefulWidget {
   const StudentsScreen({super.key});

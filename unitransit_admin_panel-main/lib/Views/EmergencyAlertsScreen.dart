@@ -5,7 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:unitransit_admin/Core/Util/CloudFirestoreCompat.dart';
+import 'package:unitransit_admin/Core/Network/ApiClient.dart';
+import 'package:unitransit_admin/Core/Network/ApiConfig.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:unitransit_admin/ViewModels/DashboardViewModel.dart';
@@ -51,36 +52,12 @@ class _EmergencyAlertsScreenState extends State<EmergencyAlertsScreen>
       _firestoreUserData = null;
     });
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-      if (doc.exists && mounted) {
-        final userData = doc.data();
-        if (userData?['role'] == 'Driver') {
-          final driverDoc = await FirebaseFirestore.instance.collection('drivers').doc(userId).get();
-          if (driverDoc.exists && mounted) {
-            setState(() {
-              _firestoreUserData = {
-                ...?userData,
-                ...?driverDoc.data(),
-                'role': 'Driver',
-              };
-            });
-          } else {
-            setState(() {
-              _firestoreUserData = userData;
-            });
-          }
-        } else {
+      final numId = int.tryParse(userId);
+      if (numId != null && numId > 0) {
+        final res = await ApiClient().get(ApiConfig.adminUserDetail(numId));
+        if (res.statusCode == 200 && res.data is Map && mounted) {
           setState(() {
-            _firestoreUserData = userData;
-          });
-        }
-      } else {
-        // Fallback: try drivers collection
-        final driverDoc = await FirebaseFirestore.instance.collection('drivers').doc(userId).get();
-        if (driverDoc.exists && mounted) {
-          setState(() {
-            _firestoreUserData = driverDoc.data();
-            _firestoreUserData?['role'] = 'Driver';
+            _firestoreUserData = Map<String, dynamic>.from(res.data as Map);
           });
         }
       }
@@ -1372,20 +1349,15 @@ class _EmergencyAlertsScreenState extends State<EmergencyAlertsScreen>
                             ),
                           ],
                         ),
-                        StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance
-                              .collection('sos_reviews')
-                              .where('alertId', isEqualTo: alert['id'])
-                              .snapshots(),
-                          builder: (context, reviewSnapshot) {
-                            if (!reviewSnapshot.hasData || reviewSnapshot.data!.docs.isEmpty) {
+                        Builder(
+                          builder: (context) {
+                            final ratingVal = alert['review_rating'] ?? alert['reviewRating'];
+                            if (ratingVal == null) {
                               return const SizedBox.shrink();
                             }
-                            
-                            final reviewDoc = reviewSnapshot.data!.docs.first.data() as Map<String, dynamic>;
-                            final rating = reviewDoc['rating'] as int? ?? 5;
-                            final comment = reviewDoc['review'] as String? ?? 'No comment provided';
-                            
+                            final rating = (ratingVal as num).toInt();
+                            final comment = alert['review_comment'] ?? alert['reviewComment'] ?? 'Handled effectively';
+
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
