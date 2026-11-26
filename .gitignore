@@ -1,0 +1,52 @@
+# Archives and large files
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# Dart & Flutter
+.dart_tool/
+build/
+**/.dart_tool/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+.packages
+**/.packages
+
+# IDE & Editor files
+.idea/
+.vscode/
+**/.idea/
+**/.vscode/
+*.iml
+**/*.iml
+
+# Temporary & Output files
+*.log
+**/*.log
+*analyze_output.txt
+**/*analyze_output.txt
+test_supabase.dart
+**/test_supabase.dart
+.DS_Store
+Thumbs.db
+
+# Python & Backend
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+venv/
+**/venv/
+.venv/
+**/.venv/
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+media/
+**/media/
+staticfiles/
+
