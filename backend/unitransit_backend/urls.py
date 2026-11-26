@@ -5,6 +5,13 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # All API v1 routes
+    path('api/v1/', include('accounts.urls')),
+    path('api/v1/', include('transit.urls')),
+    path('api/v1/', include('schedules.urls')),
+    path('api/v1/', include('tracking.urls')),
+    path('api/v1/', include('operations.urls')),
 ]
 
 if settings.DEBUG:

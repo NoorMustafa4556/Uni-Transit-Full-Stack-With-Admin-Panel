@@ -24,7 +24,7 @@ class Trip(models.Model):
     route = models.ForeignKey('transit.Route', on_delete=models.CASCADE, related_name='trips')
     bus = models.ForeignKey('transit.Bus', on_delete=models.CASCADE, related_name='trips')
     driver = models.ForeignKey('accounts.DriverProfile', on_delete=models.CASCADE, related_name='trips')
-    service_date = models.DateField(default=timezone.now)
+    service_date = models.DateField(default=timezone.localdate)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     started_at = models.DateTimeField(default=timezone.now)
     ended_at = models.DateTimeField(null=True, blank=True)
