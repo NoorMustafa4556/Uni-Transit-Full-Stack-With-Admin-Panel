@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:unitransit_admin/Core/Constants/AppColors.dart';
 import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Models/BusScheduleModel.dart';
+import 'package:unitransit_admin/Models/ScheduleProfileModel.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:unitransit_admin/ViewModels/BusesViewModel.dart';
@@ -25,6 +26,9 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
   Map<String, String> _genderConfigs = {}; // { 'Boys Special': '#2196F3', ... }
   StreamSubscription? _genderSub;
 
+  List<ScheduleProfileModel> _profiles = [];
+  bool _isLoadingProfiles = true;
+
   final List<String> _weekdays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
   ];
@@ -35,6 +39,7 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
     _selectedDate = DateTime.now();
     _currentMonth = DateTime(_selectedDate.year, _selectedDate.month);
     _calendarScrollController = ScrollController();
+    _fetchProfiles();
 
     // Listen to gender_configs in Django settings
     _genderSub = Provider.of<FirebaseService>(context, listen: false)
@@ -81,6 +86,161 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
 
   String _getWeekdayName(DateTime date) {
     return _weekdays[date.weekday - 1];
+  }
+
+  Future<void> _fetchProfiles() async {
+    try {
+      final profiles = await Provider.of<FirebaseService>(context, listen: false).getScheduleProfiles();
+      if (mounted) {
+        setState(() {
+          _profiles = profiles;
+          _isLoadingProfiles = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingProfiles = false);
+    }
+  }
+
+  Future<void> _setActiveProfile(ScheduleProfileModel profile) async {
+    try {
+      final res = await Provider.of<FirebaseService>(context, listen: false).setActiveScheduleProfile(profile.id);
+      if (mounted) {
+        final msg = res.statusCode == 202
+            ? 'Request submitted for Super Admin approval (Maker-Checker).'
+            : "Profile '${profile.name}' is now active.";
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+        _fetchProfiles();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error activating profile: $e')));
+      }
+    }
+  }
+
+  Widget _buildProfilesSelectorBar() {
+    if (_profiles.isEmpty && !_isLoadingProfiles) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderLight),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.layers_rounded, color: AppColors.primaryNavy, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Schedule Profiles',
+                    style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark),
+                  ),
+                ],
+              ),
+              Text(
+                '1-Click Active Switch (Applies to all live student feeds)',
+                style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isLoadingProfiles)
+            const Center(child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2)))
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _profiles.map((p) {
+                  return Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: p.isActive ? AppColors.primaryNavy.withValues(alpha: 0.06) : AppColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: p.isActive ? AppColors.primaryNavy : AppColors.borderLight,
+                        width: p.isActive ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          p.isActive ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                          size: 16,
+                          color: p.isActive ? AppColors.primaryNavy : AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              p.name,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: p.isActive ? AppColors.primaryNavy : AppColors.textDark,
+                              ),
+                            ),
+                            if (p.effectiveFrom.isNotEmpty)
+                              Text(
+                                'Effective: ${p.effectiveFrom}',
+                                style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textSecondary),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        if (p.isActive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'ACTIVE',
+                              style: GoogleFonts.poppins(color: Colors.green.shade800, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          )
+                        else
+                          ElevatedButton(
+                            onPressed: () => _setActiveProfile(p),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryNavy,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: Text('Set Active', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   String _formatDate(DateTime date) {
@@ -220,7 +380,9 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                         ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                _buildProfilesSelectorBar(),
+                const SizedBox(height: 16),
 
                 // Calendar Row Section
                 Container(
@@ -701,6 +863,9 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                     label: Text('Type', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textDark)),
                   ),
                   DataColumn(
+                    label: Text('Dispatched / Slot', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textDark)),
+                  ),
+                  DataColumn(
                     label: Text('Key Stops', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textDark)),
                   ),
                   DataColumn(
@@ -766,6 +931,54 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                             schedule.type.toUpperCase(),
                             style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 10, color: typeColor),
                           ),
+                        ),
+                      ),
+                      // Dispatched / Slot Badge Cell
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: schedule.dispatchedCount >= schedule.totalBuses && schedule.totalBuses > 0
+                                    ? Colors.green.withValues(alpha: 0.1)
+                                    : AppColors.primaryNavy.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                schedule.totalBuses > 0
+                                    ? '${schedule.dispatchedCount}/${schedule.totalBuses} Dispatched'
+                                    : 'Standby',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                  color: schedule.dispatchedCount >= schedule.totalBuses && schedule.totalBuses > 0
+                                      ? Colors.green.shade800
+                                      : AppColors.primaryNavy,
+                                ),
+                              ),
+                            ),
+                            if (schedule.isLastBus) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.amber.shade700, width: 0.8),
+                                ),
+                                child: Text(
+                                  'LAST BUS',
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 9,
+                                    color: Colors.amber.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       // Stops cell

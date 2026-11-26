@@ -20,6 +20,7 @@ import 'package:uni_transit/ViewModels/RouteProvider.dart';
 import 'package:uni_transit/ViewModels/BusProvider.dart';
 import 'package:uni_transit/ViewModels/MapUiProvider.dart';
 import 'package:uni_transit/ViewModels/AuthProvider.dart';
+import 'package:uni_transit/Widgets/TrackMyTrainSheet.dart';
 
 // 🚀 PROFESSIONAL FEATURES ADDED:
 // 1. Hub Snapping: Markers automatically align with polyline ends.
@@ -1390,6 +1391,40 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                                         ),
                                       ),
                                     ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    final tripId = currentBusData['trip_id'] ?? currentBusData['tripId'] ?? currentBusData['active_trip_id'];
+                                    final numTripId = tripId != null ? int.tryParse(tripId.toString()) : null;
+                                    final stopId = currentBusData['stop_id'] ?? currentBusData['stopId'] ?? currentBusData['next_stop_id'];
+                                    final numStopId = stopId != null ? int.tryParse(stopId.toString()) : null;
+
+                                    TrackMyTrainSheet.show(
+                                      context,
+                                      tripId: numTripId,
+                                      stopId: numStopId,
+                                      busNumber: id,
+                                      plateNumber: currentBusData['plateNumber']?.toString(),
+                                      gender: currentBusData['gender']?.toString() ?? 'Combined',
+                                      crowdStatus: currentBusData['crowd_status']?.toString() ?? 'seats_available',
+                                      etaText: etaText,
+                                      distanceText: distText,
+                                      isLastBus: (currentBusData['is_last_bus'] ?? false) == true,
+                                    );
+                                  },
+                                  icon: const Icon(Icons.timeline_rounded, color: Colors.white, size: 20),
+                                  label: Text(
+                                    "Open Track-My-Train Timeline",
+                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryNavy,
+                                    minimumSize: const Size(double.infinity, 48),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    elevation: 2,
                                   ),
                                 ),
                               ],

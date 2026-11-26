@@ -4,8 +4,8 @@ from .views import (
     EmergencySOSListCreateView, EmergencySOSResolveView, EmergencySOSReviewView,
     SupportTicketListCreateView, SupportTicketDetailView,
     NotificationListCreateView, NotificationMarkReadView,
-    AuditLogListView, TransportContactListCreateView,
-    FaqListView, AppConfigView
+    AuditLogListView, TransportContactListCreateView, TransportContactDetailView,
+    FaqListView, FaqDetailView, AppConfigView
 )
 
 urlpatterns = [
@@ -28,6 +28,8 @@ urlpatterns = [
     path('operations/notifications/<int:pk>/read/', NotificationMarkReadView.as_view(), name='operations-notification-read'),
     path('operations/audit-logs/', AuditLogListView.as_view(), name='operations-audit-logs'),
     path('operations/contacts/', TransportContactListCreateView.as_view(), name='operations-contacts'),
+    path('operations/contacts/<int:pk>/', TransportContactDetailView.as_view(), name='operations-contact-detail'),
     path('operations/faqs/', FaqListView.as_view(), name='operations-faqs'),
+    path('operations/faqs/<int:pk>/', FaqDetailView.as_view(), name='operations-faq-detail'),
     path('operations/config/', AppConfigView.as_view(), name='operations-config'),
 ]

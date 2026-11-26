@@ -129,13 +129,9 @@ class AdminApiService {
 
   Future<int> getAdminsCount() async {
     try {
-      final res = await _client.get(ApiConfig.adminUsers);
+      final res = await _client.get(ApiConfig.adminAdmins);
       if (res.statusCode == 200 && res.data is List) {
-        final list = res.data as List;
-        return list.where((u) {
-          final r = u['role']?.toString().toLowerCase();
-          return r == 'super_admin' || r == 'sub_admin' || r == 'admin';
-        }).length;
+        return (res.data as List).length;
       }
     } catch (_) {}
     return 1;
@@ -163,7 +159,7 @@ class AdminApiService {
   // =========================================================================
 
   Future<List<DriverModel>> fetchDrivers() async {
-    final res = await _client.get(ApiConfig.adminUsers, queryParameters: {'role': 'driver'});
+    final res = await _client.get(ApiConfig.adminDrivers);
     if (res.statusCode == 200 && res.data is List) {
       final list = (res.data as List).map((row) {
         return DriverModel.fromMap(Map<String, dynamic>.from(row as Map));
@@ -196,7 +192,7 @@ class AdminApiService {
       },
     };
 
-    final res = await _client.post(ApiConfig.adminUsers, data: payload);
+    final res = await _client.post(ApiConfig.adminDrivers, data: payload);
     await logActivity(action: 'Added Driver', target: 'Driver: ${driver.name}');
     fetchDrivers();
     return res;
@@ -205,28 +201,20 @@ class AdminApiService {
   Future<ApiResponse> updateDriver(DriverModel driver) async {
     final id = int.tryParse(driver.id) ?? 0;
     final payload = {
-      'name': driver.name,
-      'phone': driver.phoneNumber,
       'is_verified': driver.isVerified,
       'is_blocked': driver.isBlocked,
-      'driver_profile': {
-        'cnic': driver.cnic,
-        'license_number': driver.licenseNumber,
-        'license_expiry': driver.licenseExpiry.toIso8601String().split('T').first,
-        'experience': driver.experience,
-      },
     };
 
-    final res = await _client.patch(ApiConfig.adminUserDetail(id), data: payload);
-    await logActivity(action: 'Updated Driver', target: 'Driver: ${driver.name}');
+    final res = await _client.patch(ApiConfig.adminDriverStatus(id), data: payload);
+    await logActivity(action: 'Updated Driver Status', target: 'Driver: ${driver.name}');
     fetchDrivers();
     return res;
   }
 
   Future<ApiResponse> deleteDriver(String id) async {
     final numId = int.tryParse(id) ?? 0;
-    final res = await _client.delete(ApiConfig.adminUserDetail(numId));
-    await logActivity(action: 'Deleted Driver', target: 'Driver: $id');
+    final res = await _client.patch(ApiConfig.adminDriverStatus(numId), data: {'is_blocked': true});
+    await logActivity(action: 'Blocked/Deleted Driver', target: 'Driver: $id');
     fetchDrivers();
     return res;
   }
@@ -248,7 +236,7 @@ class AdminApiService {
   // =========================================================================
 
   Future<List<StudentModel>> fetchStudents() async {
-    final res = await _client.get(ApiConfig.adminUsers, queryParameters: {'role': 'student'});
+    final res = await _client.get(ApiConfig.adminStudents);
     if (res.statusCode == 200 && res.data is List) {
       final list = (res.data as List).map((row) {
         return StudentModel.fromMap(Map<String, dynamic>.from(row as Map));
@@ -281,7 +269,7 @@ class AdminApiService {
       },
     };
 
-    final res = await _client.post(ApiConfig.adminUsers, data: payload);
+    final res = await _client.post(ApiConfig.adminStudents, data: payload);
     await logActivity(action: 'Added Student', target: 'Student: ${student.name}');
     fetchStudents();
     return res;
@@ -290,27 +278,19 @@ class AdminApiService {
   Future<ApiResponse> updateStudent(StudentModel student) async {
     final id = int.tryParse(student.id) ?? 0;
     final payload = {
-      'name': student.name,
-      'phone': student.phoneNumber,
       'is_verified': student.isVerified,
       'is_blocked': student.isBlocked,
-      'student_profile': {
-        'roll_no': student.studentId,
-        'registration_no': student.regNo,
-        'department': student.department,
-        'semester': int.tryParse(student.semester) ?? 1,
-      },
     };
 
-    final res = await _client.patch(ApiConfig.adminUserDetail(id), data: payload);
+    final res = await _client.patch(ApiConfig.adminStudentStatus(id), data: payload);
     fetchStudents();
     return res;
   }
 
   Future<ApiResponse> deleteStudent(String id) async {
     final numId = int.tryParse(id) ?? 0;
-    final res = await _client.delete(ApiConfig.adminUserDetail(numId));
-    await logActivity(action: 'Deleted Student', target: 'Student: $id');
+    final res = await _client.patch(ApiConfig.adminStudentStatus(numId), data: {'is_blocked': true});
+    await logActivity(action: 'Blocked/Deleted Student', target: 'Student: $id');
     fetchStudents();
     return res;
   }
@@ -539,6 +519,9 @@ class AdminApiService {
           stops: const [],
           type: gender,
           assignedDriverName: driverName,
+          totalBuses: slot.totalBuses,
+          dispatchedCount: slot.dispatchedCount,
+          isLastBus: slot.isLastBus,
         );
       }).toList();
       _schedulesController.add(list);
@@ -614,6 +597,8 @@ class AdminApiService {
     return res;
   }
 
+  Future<ApiResponse> setActiveScheduleProfile(int id) => setActiveProfile(id);
+
   Future<List<AdminTimeSlotModel>> getTimeSlots({int? profileId}) async {
     final res = await _client.get(ApiConfig.timeSlots, queryParameters: profileId != null ? {'profile': profileId} : null);
     if (res.statusCode == 200 && res.data is List) {
@@ -677,7 +662,7 @@ class AdminApiService {
   // =========================================================================
 
   Future<List<Map<String, dynamic>>> getLiveFleet() async {
-    final res = await _client.get(ApiConfig.liveFleet);
+    final res = await _client.get(ApiConfig.activeTrips);
     if (res.statusCode == 200 && res.data is List) {
       return List<Map<String, dynamic>>.from(res.data as List);
     }
@@ -712,7 +697,7 @@ class AdminApiService {
 
   Stream<List<Map<String, dynamic>>> getTripHistoryStream() {
     final controller = StreamController<List<Map<String, dynamic>>>.broadcast();
-    _client.get(ApiConfig.trips).then((res) {
+    _client.get(ApiConfig.tripsHistory).then((res) {
       if (res.statusCode == 200 && res.data is List) {
         final list = (res.data as List).map((row) {
           final map = Map<String, dynamic>.from(row as Map);
@@ -729,8 +714,10 @@ class AdminApiService {
 
   Stream<Map<String, dynamic>> getTripAnalyticsStream() {
     final controller = StreamController<Map<String, dynamic>>.broadcast();
-    _client.get(ApiConfig.trips).then((res) {
-      if (res.statusCode == 200 && res.data is List) {
+    _client.get(ApiConfig.analyticsSummary).then((res) {
+      if (res.statusCode == 200 && res.data is Map) {
+        controller.add(Map<String, dynamic>.from(res.data as Map));
+      } else if (res.statusCode == 200 && res.data is List) {
         final list = res.data as List;
         int total = list.length;
         int completed = list.where((t) => t['status'] == 'completed').length;
@@ -787,19 +774,13 @@ class AdminApiService {
 
   Future<ApiResponse> updateTicketStatus(String ticketId, String status, {String? reply}) async {
     final numId = int.tryParse(ticketId) ?? 0;
+    final Map<String, dynamic> data = {'status': status, 'admin_read': true};
     if (reply != null && reply.trim().isNotEmpty) {
-      final res = await _client.post(ApiConfig.ticketReply(numId), data: {'admin_reply': reply});
-      fetchTickets();
-      return res;
-    } else if (status.toLowerCase() == 'resolved' || status.toLowerCase() == 'closed') {
-      final res = await _client.post(ApiConfig.ticketClose(numId));
-      fetchTickets();
-      return res;
-    } else {
-      final res = await _client.patch(ApiConfig.ticketDetail(numId), data: {'status': status});
-      fetchTickets();
-      return res;
+      data['admin_reply'] = reply.trim();
     }
+    final res = await _client.patch(ApiConfig.ticketDetail(numId), data: data);
+    fetchTickets();
+    return res;
   }
 
   Future<void> markTicketAsRead(String ticketId) async {
@@ -857,12 +838,11 @@ class AdminApiService {
         ? 'student'
         : (targetAudience.toLowerCase().contains('driver') ? 'driver' : 'all');
 
-    return _client.post(ApiConfig.broadcastNotification, data: {
+    return _client.post(ApiConfig.notifications, data: {
       'title': title,
       'message': message,
       'target_role': role,
       'notification_type': type,
-      'image_url': imageUrl,
     });
   }
 
@@ -875,12 +855,11 @@ class AdminApiService {
     Map<String, dynamic>? extraData,
   }) async {
     final numId = int.tryParse(userId) ?? 0;
-    return _client.post(ApiConfig.sendUserNotification, data: {
-      'user_id': numId,
+    return _client.post(ApiConfig.notifications, data: {
       'title': title,
       'message': message,
+      'target_user': numId,
       'notification_type': type,
-      'image_url': imageUrl,
     });
   }
 

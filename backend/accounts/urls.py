@@ -21,4 +21,5 @@ urlpatterns = [
     path('admin/drivers/', AdminDriverListCreateView.as_view(), name='admin-drivers-list-create'),
     path('admin/drivers/<int:pk>/status/', AdminDriverStatusView.as_view(), name='admin-driver-status'),
     path('admin/admins/', AdminManagementView.as_view(), name='admin-admins-list-create'),
+    path('admin/admins/<int:pk>/', AdminManagementView.as_view(), name='admin-admins-detail'),
 ]

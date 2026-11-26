@@ -11,12 +11,21 @@ class ApiConfig {
   static const String refreshToken = '/auth/token/refresh/';
   static const String me = '/auth/me/';
   static const String changePassword = '/auth/change-password/';
-  static const String adminUsers = '/admin/users/';
-  static String adminUserDetail(int id) => '/admin/users/$id/';
-  static String blockUser(int id) => '/admin/users/$id/block/';
-  static String unblockUser(int id) => '/admin/users/$id/unblock/';
-  static String verifyUser(int id) => '/admin/users/$id/verify/';
-  static String resetUserPassword(int id) => '/admin/users/$id/reset-password/';
+
+  // User Management
+  static const String adminStudents = '/admin/students/';
+  static String adminStudentStatus(int id) => '/admin/students/$id/status/';
+  static const String adminDrivers = '/admin/drivers/';
+  static String adminDriverStatus(int id) => '/admin/drivers/$id/status/';
+  static const String adminAdmins = '/admin/admins/';
+
+  // Backward compatibility aliases
+  static const String adminUsers = '/admin/students/';
+  static String adminUserDetail(int id) => '/admin/students/$id/status/';
+  static String blockUser(int id) => '/admin/students/$id/status/';
+  static String unblockUser(int id) => '/admin/students/$id/status/';
+  static String verifyUser(int id) => '/admin/students/$id/status/';
+  static String resetUserPassword(int id) => '/admin/students/$id/status/';
 
   // Transit Endpoints
   static const String hubs = '/transit/hubs/';
@@ -40,16 +49,26 @@ class ApiConfig {
   static String setActiveProfile(int id) => '/schedules/profiles/$id/set-active/';
   static const String timeSlots = '/schedules/time-slots/';
   static String timeSlotDetail(int id) => '/schedules/time-slots/$id/';
-  static const String busAssignments = '/schedules/bus-assignments/';
-  static String busAssignmentDetail(int id) => '/schedules/bus-assignments/$id/';
-  static const String todayActiveSchedule = '/schedules/today-active/';
+  static const String slotAssignments = '/schedules/slot-assignments/';
+  static String slotAssignmentDetail(int id) => '/schedules/slot-assignments/$id/';
+  static const String activeSlots = '/schedules/active-slots/';
+
+  // Backward compatibility aliases for schedules
+  static const String busAssignments = '/schedules/slot-assignments/';
+  static String busAssignmentDetail(int id) => '/schedules/slot-assignments/$id/';
+  static const String todayActiveSchedule = '/schedules/active-slots/';
 
   // Tracking & Live Fleet
-  static const String trips = '/tracking/trips/';
-  static String tripDetail(int id) => '/tracking/trips/$id/';
-  static String driverTripStop(int tripId) => '/tracking/driver/trips/$tripId/stop/';
-  static const String liveFleet = '/tracking/admin/live-fleet/';
+  static const String activeTrips = '/tracking/admin/trips/active/';
+  static const String tripsHistory = '/tracking/admin/trips/history/';
   static const String stopSkipAlerts = '/tracking/admin/stop-skip-alerts/';
+  static const String analyticsSummary = '/tracking/admin/analytics/summary/';
+  static String driverTripStop(int tripId) => '/tracking/driver/trips/$tripId/stop/';
+
+  // Backward compatibility aliases for tracking
+  static const String trips = '/tracking/admin/trips/history/';
+  static String tripDetail(int id) => '/tracking/admin/trips/$id/';
+  static const String liveFleet = '/tracking/admin/trips/active/';
 
   // Operations Endpoints
   static const String approvals = '/operations/approvals/';
@@ -63,12 +82,12 @@ class ApiConfig {
 
   static const String tickets = '/operations/tickets/';
   static String ticketDetail(int id) => '/operations/tickets/$id/';
-  static String ticketReply(int id) => '/operations/tickets/$id/reply/';
-  static String ticketClose(int id) => '/operations/tickets/$id/close/';
+  static String ticketReply(int id) => '/operations/tickets/$id/';
+  static String ticketClose(int id) => '/operations/tickets/$id/';
 
   static const String notifications = '/operations/notifications/';
-  static const String broadcastNotification = '/operations/notifications/broadcast/';
-  static const String sendUserNotification = '/operations/notifications/send-user/';
+  static const String broadcastNotification = '/operations/notifications/';
+  static const String sendUserNotification = '/operations/notifications/';
 
   static const String auditLogs = '/operations/audit-logs/';
   static const String contacts = '/operations/contacts/';

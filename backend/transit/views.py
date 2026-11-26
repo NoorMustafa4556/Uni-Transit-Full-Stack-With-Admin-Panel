@@ -69,20 +69,101 @@ class RouteCategoryListCreateView(views.APIView):
         return handle_maker_checker_mutation(request, 'route_category', 'create', serializer_class=RouteCategorySerializer)
 
 
+class RouteCategoryDetailView(views.APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
+
+    def get(self, request, pk):
+        category = get_object_or_404(RouteCategory, pk=pk)
+        return Response(RouteCategorySerializer(category).data)
+
+    def put(self, request, pk):
+        category = get_object_or_404(RouteCategory, pk=pk)
+        return handle_maker_checker_mutation(request, 'route_category', 'update', entity_id=pk, serializer_class=RouteCategorySerializer, instance=category)
+
+    def patch(self, request, pk):
+        category = get_object_or_404(RouteCategory, pk=pk)
+        return handle_maker_checker_mutation(request, 'route_category', 'patch', entity_id=pk, serializer_class=RouteCategorySerializer, instance=category)
+
+    def delete(self, request, pk):
+        category = get_object_or_404(RouteCategory, pk=pk)
+        return handle_maker_checker_mutation(request, 'route_category', 'delete', entity_id=pk, instance=category)
+
+
 class RouteTagListView(views.APIView):
-    permission_classes = [permissions.AllowAny]
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
 
     def get(self, request):
         tags = get_filtered_queryset(RouteTag, request)
         return Response(RouteTagSerializer(tags, many=True).data)
 
+    def post(self, request):
+        return handle_maker_checker_mutation(request, 'route_tag', 'create', serializer_class=RouteTagSerializer)
+
+
+class RouteTagDetailView(views.APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
+
+    def get(self, request, pk):
+        tag = get_object_or_404(RouteTag, pk=pk)
+        return Response(RouteTagSerializer(tag).data)
+
+    def put(self, request, pk):
+        tag = get_object_or_404(RouteTag, pk=pk)
+        return handle_maker_checker_mutation(request, 'route_tag', 'update', entity_id=pk, serializer_class=RouteTagSerializer, instance=tag)
+
+    def patch(self, request, pk):
+        tag = get_object_or_404(RouteTag, pk=pk)
+        return handle_maker_checker_mutation(request, 'route_tag', 'patch', entity_id=pk, serializer_class=RouteTagSerializer, instance=tag)
+
+    def delete(self, request, pk):
+        tag = get_object_or_404(RouteTag, pk=pk)
+        return handle_maker_checker_mutation(request, 'route_tag', 'delete', entity_id=pk, instance=tag)
+
 
 class GenderCategoryListView(views.APIView):
-    permission_classes = [permissions.AllowAny]
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
 
     def get(self, request):
         genders = get_filtered_queryset(GenderCategory, request)
         return Response(GenderCategorySerializer(genders, many=True).data)
+
+    def post(self, request):
+        return handle_maker_checker_mutation(request, 'gender_category', 'create', serializer_class=GenderCategorySerializer)
+
+
+class GenderCategoryDetailView(views.APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
+
+    def get(self, request, pk):
+        gender = get_object_or_404(GenderCategory, pk=pk)
+        return Response(GenderCategorySerializer(gender).data)
+
+    def put(self, request, pk):
+        gender = get_object_or_404(GenderCategory, pk=pk)
+        return handle_maker_checker_mutation(request, 'gender_category', 'update', entity_id=pk, serializer_class=GenderCategorySerializer, instance=gender)
+
+    def patch(self, request, pk):
+        gender = get_object_or_404(GenderCategory, pk=pk)
+        return handle_maker_checker_mutation(request, 'gender_category', 'patch', entity_id=pk, serializer_class=GenderCategorySerializer, instance=gender)
+
+    def delete(self, request, pk):
+        gender = get_object_or_404(GenderCategory, pk=pk)
+        return handle_maker_checker_mutation(request, 'gender_category', 'delete', entity_id=pk, instance=gender)
 
 
 class StopListCreateView(views.APIView):
@@ -184,8 +265,27 @@ class BusListCreateView(views.APIView):
         return Response(BusSerializer(buses, many=True).data)
 
     def post(self, request):
-        serializer = BusSerializer(data=request.data)
-        if serializer.is_valid():
-            bus = serializer.save()
-            return Response(BusSerializer(bus).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return handle_maker_checker_mutation(request, 'bus', 'create', serializer_class=BusSerializer)
+
+
+class BusDetailView(views.APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
+
+    def get(self, request, pk):
+        bus = get_object_or_404(Bus.objects.select_related('default_gender', 'assigned_driver__user'), pk=pk)
+        return Response(BusSerializer(bus).data)
+
+    def put(self, request, pk):
+        bus = get_object_or_404(Bus, pk=pk)
+        return handle_maker_checker_mutation(request, 'bus', 'update', entity_id=pk, serializer_class=BusSerializer, instance=bus)
+
+    def patch(self, request, pk):
+        bus = get_object_or_404(Bus, pk=pk)
+        return handle_maker_checker_mutation(request, 'bus', 'patch', entity_id=pk, serializer_class=BusSerializer, instance=bus)
+
+    def delete(self, request, pk):
+        bus = get_object_or_404(Bus, pk=pk)
+        return handle_maker_checker_mutation(request, 'bus', 'delete', entity_id=pk, instance=bus)

@@ -54,6 +54,13 @@ class RoutePlanningViewModel extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> toggleCategory(RouteCategoryModel category, bool value) async {
+    try {
+      await _firebaseService.updateRouteCategory(category.id, name: category.name, isActive: value);
+      await fetchCategoriesAndTags();
+    } catch (_) {}
+  }
+
   Future<void> addRouteTag(String code, String label, String colorHex) async {
     final newTag = RouteTagModel(id: 0, code: code, label: label, colorHex: colorHex);
     await _firebaseService.addRouteTag(newTag);

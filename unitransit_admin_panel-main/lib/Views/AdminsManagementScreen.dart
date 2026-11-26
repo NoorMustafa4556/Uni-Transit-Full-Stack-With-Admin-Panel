@@ -21,7 +21,7 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
   bool _isCreating = false;
 
   Future<List<Map<String, dynamic>>> _loadAdmins() async {
-    final res = await ApiClient().get(ApiConfig.adminUsers);
+    final res = await ApiClient().get(ApiConfig.adminAdmins);
     if (res.statusCode == 200 && res.data is List) {
       return (res.data as List).map((row) => Map<String, dynamic>.from(row as Map)).where((u) {
         final role = (u['role'] ?? '').toString().toLowerCase();
@@ -458,12 +458,11 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
   Future<void> _createAdmin(BuildContext context, String name, String email, String password, String subRole) async {
     final firebaseService = context.read<FirebaseService>();
     final role = subRole.toLowerCase().contains('super') ? 'super_admin' : 'sub_admin';
-    await ApiClient().post(ApiConfig.adminUsers, data: {
+    await ApiClient().post(ApiConfig.adminAdmins, data: {
       'name': name,
       'email': email,
       'password': password,
       'role': role,
-      'is_verified': true,
     });
     await firebaseService.logActivity(action: 'Created Admin', target: 'Admin: $name ($subRole)');
     setState(() {});
@@ -482,7 +481,7 @@ class _AdminsManagementScreenState extends State<AdminsManagementScreen> {
             onPressed: () async {
               final numId = int.tryParse(id) ?? 0;
               if (numId > 0) {
-                await ApiClient().delete(ApiConfig.adminUserDetail(numId));
+                await ApiClient().delete('${ApiConfig.adminAdmins}$numId/');
               }
               if (context.mounted) {
                 context.read<FirebaseService>().logActivity(action: 'Revoked Admin Access', target: 'Admin: $name');

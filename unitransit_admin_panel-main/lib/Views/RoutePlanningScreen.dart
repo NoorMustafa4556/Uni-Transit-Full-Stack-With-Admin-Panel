@@ -13,6 +13,7 @@ import 'package:unitransit_admin/Core/Services/FirebaseService.dart';
 import 'package:unitransit_admin/Models/BusScheduleModel.dart';
 import 'package:unitransit_admin/Models/HubModel.dart';
 import 'package:unitransit_admin/Models/StopModel.dart';
+import 'package:unitransit_admin/Models/RouteCategoryModel.dart';
 import 'package:unitransit_admin/Core/Utils/ResponsiveUtil.dart';
 import 'package:unitransit_admin/ViewModels/RoutePlanningViewModel.dart';
 import 'package:unitransit_admin/Core/Utils/Animations.dart';
@@ -30,7 +31,7 @@ class _RoutePlanningScreenState extends State<RoutePlanningScreen> with SingleTi
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(() {
       if (mounted) {
         setState(() {});
@@ -120,6 +121,8 @@ class _RoutePlanningScreenState extends State<RoutePlanningScreen> with SingleTi
                             return const PolylineUploaderSection();
                           case 4:
                             return const MapPreviewSection();
+                          case 5:
+                            return const RouteCategoriesTagsSection();
                           default:
                             return const SizedBox.shrink();
                         }
@@ -167,6 +170,7 @@ class _RoutePlanningScreenState extends State<RoutePlanningScreen> with SingleTi
               Tab(text: 'Stops'),
               Tab(text: 'Paths'),
               Tab(text: 'Map Preview'),
+              Tab(text: 'Categories & Tags'),
             ],
           ),
         ),
@@ -1880,4 +1884,255 @@ Widget _buildEmptyState(String msg) {
       child: Text(msg, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
     ),
   );
+}
+
+// --- Section F: Route Categories & Tags Manager ---
+class RouteCategoriesTagsSection extends StatelessWidget {
+  const RouteCategoriesTagsSection({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final viewModel = context.watch<RoutePlanningViewModel>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Out-of-City Live Toggle Banner
+        Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: viewModel.isOutOfCityEnabled
+                ? Colors.blue.shade50
+                : Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: viewModel.isOutOfCityEnabled
+                  ? Colors.blue.shade200
+                  : Colors.orange.shade300,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: viewModel.isOutOfCityEnabled
+                      ? AppColors.primaryNavy
+                      : Colors.orange.shade800,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  viewModel.isOutOfCityEnabled ? Icons.commute_rounded : Icons.pause_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Out-of-City Routes Service Status',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      viewModel.isOutOfCityEnabled
+                          ? 'All Out-of-City routes (Ahmedpur, Lodhran, Hasilpur, etc.) are currently ACTIVE for students.'
+                          : 'Out-of-City routes are currently DISABLED (Maker-Checker approved or immediate Super Admin toggle).',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Switch(
+                value: viewModel.isOutOfCityEnabled,
+                activeColor: AppColors.primaryNavy,
+                onChanged: (val) {
+                  viewModel.toggleOutOfCity(val);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        val ? 'Out-of-City routes enabled.' : 'Out-of-City routes disabled.',
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+
+        // Categories List Card
+        Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.borderLight),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Route Categories',
+                    style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark),
+                  ),
+                  IconButton(
+                    onPressed: () => viewModel.fetchCategoriesAndTags(),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    tooltip: 'Refresh Categories',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (viewModel.routeCategories.isEmpty)
+                _buildEmptyState('No route categories found.')
+              else
+                ...viewModel.routeCategories.map((cat) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.borderLight),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryNavy.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.category_rounded, size: 20, color: AppColors.primaryNavy),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                cat.name,
+                                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark),
+                              ),
+                              Text(
+                                'Slug: ${cat.slug} • ${cat.isOutOfCity ? "Out-of-City Category" : "In-City Category"}',
+                                style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: cat.isActive,
+                          activeColor: AppColors.primaryNavy,
+                          onChanged: (val) {
+                            viewModel.toggleCategory(cat, val);
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+
+        // Route Tags Management Card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.borderLight),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Route Tags (S, SB, R, I, B)',
+                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Tags identify specialized bus operations: Special, Staff Bus, Regular, Inter-Campus, and Backup.',
+                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 20),
+              if (viewModel.routeTags.isEmpty)
+                _buildEmptyState('No route tags configured.')
+              else
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: viewModel.routeTags.map((tag) {
+                    Color tagColor = AppColors.primaryNavy;
+                    try {
+                      final hex = tag.colorHex.replaceAll('#', '');
+                      tagColor = Color(int.parse('FF$hex', radix: 16));
+                    } catch (_) {}
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: tagColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: tagColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: tagColor,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              tag.code,
+                              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                tag.label,
+                                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textDark),
+                              ),
+                              Text(
+                                'Tag Code: ${tag.code}',
+                                style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

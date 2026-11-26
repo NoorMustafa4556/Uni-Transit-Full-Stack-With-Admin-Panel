@@ -13,8 +13,11 @@ from .serializers import (
     FaqSerializer, AppConfigSerializer
 )
 from accounts.permissions import IsNotBlocked, IsAdminStaff, IsSuperAdmin
-from transit.models import Hub, Stop, Route, RouteCategory
-from transit.serializers import HubSerializer, StopSerializer, RouteSerializer, RouteCategorySerializer
+from transit.models import Hub, Stop, Route, RouteCategory, RouteTag, GenderCategory, Bus
+from transit.serializers import (
+    HubSerializer, StopSerializer, RouteSerializer, RouteCategorySerializer,
+    RouteTagSerializer, GenderCategorySerializer, BusSerializer
+)
 from schedules.models import ScheduleProfile, TimeSlot, SlotBusAssignment
 from schedules.serializers import ScheduleProfileSerializer, TimeSlotSerializer, SlotBusAssignmentSerializer
 
@@ -23,9 +26,14 @@ ENTITY_MODEL_SERIALIZER_MAP = {
     'stop': (Stop, StopSerializer),
     'route': (Route, RouteSerializer),
     'route_category': (RouteCategory, RouteCategorySerializer),
+    'route_tag': (RouteTag, RouteTagSerializer),
+    'gender_category': (GenderCategory, GenderCategorySerializer),
+    'bus': (Bus, BusSerializer),
     'schedule_profile': (ScheduleProfile, ScheduleProfileSerializer),
     'time_slot': (TimeSlot, TimeSlotSerializer),
     'slot_assignment': (SlotBusAssignment, SlotBusAssignmentSerializer),
+    'transport_contact': (TransportContact, TransportContactSerializer),
+    'faq': (Faq, FaqSerializer),
 }
 
 # --- Higher Authority Approval Queue ---
@@ -78,6 +86,13 @@ class ApprovalApproveView(views.APIView):
                     instance = get_object_or_404(model_class, pk=cr.entity_id)
                     target_repr = f"{cr.entity_type} #{cr.entity_id}: {str(instance)}"
                     instance.delete()
+
+                elif cr.action == 'set_active' and cr.entity_type == 'schedule_profile':
+                    instance = get_object_or_404(model_class, pk=cr.entity_id)
+                    ScheduleProfile.objects.exclude(pk=instance.pk).update(is_active=False)
+                    instance.is_active = True
+                    instance.save(update_fields=['is_active'])
+                    target_repr = f"Set Active {cr.entity_type} #{instance.pk}: {str(instance)}"
 
                 cr.status = 'approved'
                 cr.reviewed_by = request.user
@@ -348,26 +363,74 @@ class TransportContactListCreateView(views.APIView):
         return [IsAdminStaff()]
 
     def get(self, request):
-        contacts = TransportContact.objects.filter(is_active=True)
+        contacts = TransportContact.objects.all() if (request.user and request.user.is_authenticated and request.user.role in ['sub_admin', 'super_admin']) else TransportContact.objects.filter(is_active=True)
         return Response(TransportContactSerializer(contacts, many=True).data)
 
     def post(self, request):
-        serializer = TransportContactSerializer(data=request.data)
-        if serializer.is_valid():
-            contact = serializer.save()
-            return Response(TransportContactSerializer(contact).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return handle_maker_checker_mutation(request, 'transport_contact', 'create', serializer_class=TransportContactSerializer)
+
+
+class TransportContactDetailView(views.APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
+
+    def get(self, request, pk):
+        contact = get_object_or_404(TransportContact, pk=pk)
+        return Response(TransportContactSerializer(contact).data)
+
+    def put(self, request, pk):
+        contact = get_object_or_404(TransportContact, pk=pk)
+        return handle_maker_checker_mutation(request, 'transport_contact', 'update', entity_id=pk, serializer_class=TransportContactSerializer, instance=contact)
+
+    def patch(self, request, pk):
+        contact = get_object_or_404(TransportContact, pk=pk)
+        return handle_maker_checker_mutation(request, 'transport_contact', 'patch', entity_id=pk, serializer_class=TransportContactSerializer, instance=contact)
+
+    def delete(self, request, pk):
+        contact = get_object_or_404(TransportContact, pk=pk)
+        return handle_maker_checker_mutation(request, 'transport_contact', 'delete', entity_id=pk, instance=contact)
 
 
 class FaqListView(views.APIView):
-    permission_classes = [permissions.AllowAny]
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
 
     def get(self, request):
-        faqs = Faq.objects.filter(is_active=True).order_by('order', 'id')
+        faqs = Faq.objects.all() if (request.user and request.user.is_authenticated and request.user.role in ['sub_admin', 'super_admin']) else Faq.objects.filter(is_active=True)
         category = request.query_params.get('category')
         if category:
             faqs = faqs.filter(category__icontains=category)
-        return Response(FaqSerializer(faqs, many=True).data)
+        return Response(FaqSerializer(faqs.order_by('order', 'id'), many=True).data)
+
+    def post(self, request):
+        return handle_maker_checker_mutation(request, 'faq', 'create', serializer_class=FaqSerializer)
+
+
+class FaqDetailView(views.APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [IsAdminStaff()]
+
+    def get(self, request, pk):
+        faq = get_object_or_404(Faq, pk=pk)
+        return Response(FaqSerializer(faq).data)
+
+    def put(self, request, pk):
+        faq = get_object_or_404(Faq, pk=pk)
+        return handle_maker_checker_mutation(request, 'faq', 'update', entity_id=pk, serializer_class=FaqSerializer, instance=faq)
+
+    def patch(self, request, pk):
+        faq = get_object_or_404(Faq, pk=pk)
+        return handle_maker_checker_mutation(request, 'faq', 'patch', entity_id=pk, serializer_class=FaqSerializer, instance=faq)
+
+    def delete(self, request, pk):
+        faq = get_object_or_404(Faq, pk=pk)
+        return handle_maker_checker_mutation(request, 'faq', 'delete', entity_id=pk, instance=faq)
 
 
 class AppConfigView(views.APIView):

@@ -217,3 +217,11 @@ class AdminManagementView(views.APIView):
             admin_user = serializer.save()
             return Response(UserSerializer(admin_user).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk=None):
+        admin_id = pk or request.query_params.get('id') or request.data.get('id')
+        admin_user = get_object_or_404(User, pk=admin_id, role__in=['sub_admin', 'super_admin'])
+        if admin_user.pk == request.user.pk:
+            return Response({'detail': 'Cannot delete your own admin account.'}, status=status.HTTP_400_BAD_REQUEST)
+        admin_user.delete()
+        return Response({'message': 'Admin deleted successfully.'})

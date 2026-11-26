@@ -1,6 +1,7 @@
 from rest_framework import views, permissions, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 from .models import ScheduleProfile, TimeSlot, SlotBusAssignment
 from .serializers import ScheduleProfileSerializer, TimeSlotSerializer, SlotBusAssignmentSerializer
 from accounts.permissions import IsAdminStaff
@@ -41,6 +42,57 @@ class ScheduleProfileDetailView(views.APIView):
     def delete(self, request, pk):
         profile = get_object_or_404(ScheduleProfile, pk=pk)
         return handle_maker_checker_mutation(request, 'schedule_profile', 'delete', entity_id=pk, instance=profile)
+
+
+class ScheduleProfileSetActiveView(views.APIView):
+    permission_classes = [IsAdminStaff]
+
+    def post(self, request, pk):
+        profile = get_object_or_404(ScheduleProfile, pk=pk)
+        user = request.user
+        if user.role == 'super_admin':
+            with transaction.atomic():
+                ScheduleProfile.objects.exclude(pk=pk).update(is_active=False)
+                profile.is_active = True
+                profile.save(update_fields=['is_active'])
+                from operations.models import AuditLog
+                AuditLog.objects.create(
+                    actor=user,
+                    action='set_active_schedule_profile',
+                    target=f"ScheduleProfile #{profile.pk}: {profile.name}",
+                    details="Directly set active by Super Admin"
+                )
+            return Response({
+                'message': f"Schedule profile '{profile.name}' is now active.",
+                'profile': ScheduleProfileSerializer(profile).data
+            })
+        elif user.role == 'sub_admin':
+            from operations.models import ChangeRequest, AuditLog
+            cr = ChangeRequest.objects.create(
+                requested_by=user,
+                entity_type='schedule_profile',
+                entity_id=str(pk),
+                action='set_active',
+                payload_json={'is_active': True},
+                status='pending'
+            )
+            AuditLog.objects.create(
+                actor=user,
+                action='request_set_active_schedule_profile',
+                target=f"ChangeRequest #{cr.id} for schedule_profile {pk}",
+                details=f"Sub-admin requested to set profile '{profile.name}' active"
+            )
+            return Response({
+                'message': 'Request to set profile active submitted for Super Admin approval.',
+                'change_request': {
+                    'id': cr.id,
+                    'entity_type': cr.entity_type,
+                    'entity_id': cr.entity_id,
+                    'action': cr.action,
+                    'status': cr.status
+                }
+            }, status=status.HTTP_202_ACCEPTED)
+        return Response({'detail': 'Admin privileges required.'}, status=status.HTTP_403_FORBIDDEN)
 
 
 class ActiveSlotsView(views.APIView):

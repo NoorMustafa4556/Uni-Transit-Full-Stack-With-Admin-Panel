@@ -12,6 +12,9 @@ class BusSchedule {
   final String? assignedDriverId;
   final String? assignedDriverName;
   final String? assignedConductorName;
+  final int totalBuses;
+  final int dispatchedCount;
+  final bool isLastBus;
 
   BusSchedule({
     required this.id,
@@ -27,6 +30,9 @@ class BusSchedule {
     this.assignedDriverId,
     this.assignedDriverName,
     this.assignedConductorName,
+    this.totalBuses = 0,
+    this.dispatchedCount = 0,
+    this.isLastBus = false,
   });
 
   // Convert to Map for Firestore
@@ -64,6 +70,9 @@ class BusSchedule {
       assignedDriverId: map['assignedDriverId'],
       assignedDriverName: map['assignedDriverName'],
       assignedConductorName: map['assignedConductorName'],
+      totalBuses: (map['total_buses'] ?? map['totalBuses'] ?? 0) is int ? (map['total_buses'] ?? map['totalBuses'] ?? 0) : int.tryParse((map['total_buses'] ?? map['totalBuses'] ?? '0').toString()) ?? 0,
+      dispatchedCount: (map['dispatched_count'] ?? map['dispatchedCount'] ?? 0) is int ? (map['dispatched_count'] ?? map['dispatchedCount'] ?? 0) : int.tryParse((map['dispatched_count'] ?? map['dispatchedCount'] ?? '0').toString()) ?? 0,
+      isLastBus: map['is_last_bus'] == true || map['isLastBus'] == true,
     );
   }
 
@@ -81,6 +90,9 @@ class BusSchedule {
     String? assignedDriverId,
     String? assignedDriverName,
     String? assignedConductorName,
+    int? totalBuses,
+    int? dispatchedCount,
+    bool? isLastBus,
   }) {
     return BusSchedule(
       id: id ?? this.id,
@@ -96,6 +108,9 @@ class BusSchedule {
       assignedDriverId: assignedDriverId ?? this.assignedDriverId,
       assignedDriverName: assignedDriverName ?? this.assignedDriverName,
       assignedConductorName: assignedConductorName ?? this.assignedConductorName,
+      totalBuses: totalBuses ?? this.totalBuses,
+      dispatchedCount: dispatchedCount ?? this.dispatchedCount,
+      isLastBus: isLastBus ?? this.isLastBus,
     );
   }
 }

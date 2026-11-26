@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (
-    ScheduleProfileListCreateView, ScheduleProfileDetailView,
+    ScheduleProfileListCreateView, ScheduleProfileDetailView, ScheduleProfileSetActiveView,
     ActiveSlotsView, TimeSlotListCreateView, TimeSlotDetailView,
     SlotBusAssignmentListCreateView, SlotBusAssignmentDetailView
 )
@@ -8,6 +8,7 @@ from .views import (
 urlpatterns = [
     path('schedules/profiles/', ScheduleProfileListCreateView.as_view(), name='schedule-profiles'),
     path('schedules/profiles/<int:pk>/', ScheduleProfileDetailView.as_view(), name='schedule-profile-detail'),
+    path('schedules/profiles/<int:pk>/set-active/', ScheduleProfileSetActiveView.as_view(), name='schedule-profile-set-active'),
     path('schedules/active-slots/', ActiveSlotsView.as_view(), name='schedule-active-slots'),
     path('schedules/time-slots/', TimeSlotListCreateView.as_view(), name='schedule-time-slots'),
     path('schedules/time-slots/<int:pk>/', TimeSlotDetailView.as_view(), name='schedule-time-slot-detail'),
