@@ -2,9 +2,12 @@ from rest_framework import views, permissions, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from .models import Trip, TripStopEvent, TripAlert
 from .serializers import TripSerializer, TripStopEventSerializer, TripAlertSerializer
 from .utils import haversine_distance_km, calculate_eta_minutes
+from .live_engine import LIVE_TRIPS, init_live_trip_sync, remove_live_trip
 from accounts.permissions import IsVerifiedDriver, IsAdminStaff, IsNotBlocked
 from transit.models import Route, Bus, Stop, RouteStop
 from schedules.models import SlotBusAssignment, TimeSlot
@@ -81,6 +84,9 @@ class DriverTripStartView(views.APIView):
                 dwell_seconds=60,
             )
 
+        # Initialize in-memory live tracking state (Write Shield)
+        init_live_trip_sync(trip)
+
         ordered_stops = [
             {
                 'sequence_order': rs.sequence_order,
@@ -118,6 +124,9 @@ class DriverTripStopView(views.APIView):
         trip.ended_at = timezone.now()
         trip.save(update_fields=['status', 'ended_at'])
 
+        # Remove from in-memory cache
+        remove_live_trip(trip.id)
+
         # Set driver offline
         driver_profile.duty_status = 'offline'
         driver_profile.save(update_fields=['duty_status'])
@@ -127,6 +136,22 @@ class DriverTripStopView(views.APIView):
             alert_type='ended',
             message=f"Trip for Bus #{trip.bus.bus_number} completed successfully."
         )
+
+        # Notify active clients that trip has ended
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f"route_{trip.route.id}",
+                {
+                    "type": "trip_alert_broadcast",
+                    "alert": {
+                        "trip_id": trip.id,
+                        "bus_number": trip.bus.bus_number,
+                        "alert_type": "ended",
+                        "message": f"Bus #{trip.bus.bus_number} completed its trip."
+                    }
+                }
+            )
 
         return Response({
             'message': 'Trip ended successfully.',
@@ -171,6 +196,28 @@ class DriverTripAlertCreateView(views.APIView):
             alert_type=alert_type,
             message=message or f"Alert ({alert_type}) reported by driver."
         )
+
+        # Broadcast live alert to route group and admin fleet
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            alert_data = {
+                'trip_id': trip.id,
+                'bus_number': trip.bus.bus_number,
+                'route_id': trip.route.id,
+                'route_name': trip.route.name,
+                'alert_type': alert.alert_type,
+                'message': alert.message,
+                'created_at': alert.created_at.isoformat(),
+            }
+            async_to_sync(channel_layer.group_send)(
+                f"route_{trip.route.id}",
+                {"type": "trip_alert_broadcast", "alert": alert_data}
+            )
+            async_to_sync(channel_layer.group_send)(
+                "admin_fleet",
+                {"type": "trip_alert_broadcast", "alert": alert_data}
+            )
+
         return Response(TripAlertSerializer(alert).data, status=status.HTTP_201_CREATED)
 
 
@@ -272,6 +319,13 @@ class StudentStopFeedView(views.APIView):
         buses_feed = []
 
         for trip in active_trips:
+            # Check in-memory live engine state for real-time telemetry (falling back to DB fields)
+            live_state = LIVE_TRIPS.get(trip.id)
+            current_order = (live_state['current_stop_order'] if live_state else trip.current_stop_order) or 1
+            last_lat = (live_state['last_lat'] if live_state else trip.last_lat) or trip.route.origin_hub.latitude
+            last_lng = (live_state['last_lng'] if live_state else trip.last_lng) or trip.route.origin_hub.longitude
+            last_speed = (live_state['speed_kmh'] if live_state else trip.last_speed_kmh) or 0.0
+
             # Check if target stop is on this route
             route_stops = list(trip.route.route_stops.select_related('stop').order_by('sequence_order'))
             target_rs = next((rs for rs in route_stops if rs.stop_id == target_stop.id), None)
@@ -281,7 +335,7 @@ class StudentStopFeedView(views.APIView):
             target_order = target_rs.sequence_order
 
             # If the bus has already crossed the student's stop, exclude it
-            if trip.current_stop_order > target_order:
+            if current_order > target_order:
                 continue
 
             # Apply gender filter
@@ -295,17 +349,17 @@ class StudentStopFeedView(views.APIView):
             if tag_filter and tag_filter.upper() not in tags:
                 continue
 
-            # Distances and ETA
+            # Distances and ETA using freshest real-time coordinates
             dist_to_stop = haversine_distance_km(
-                trip.last_lat, trip.last_lng, target_stop.latitude, target_stop.longitude
+                last_lat, last_lng, target_stop.latitude, target_stop.longitude
             )
             dist_to_student = None
             if student_lat is not None and student_lng is not None:
                 dist_to_student = haversine_distance_km(
-                    trip.last_lat, trip.last_lng, student_lat, student_lng
+                    last_lat, last_lng, student_lat, student_lng
                 )
 
-            eta_min = calculate_eta_minutes(dist_to_stop, trip.last_speed_kmh)
+            eta_min = calculate_eta_minutes(dist_to_stop, last_speed)
 
             # Slot counters
             slot_info = None
@@ -332,9 +386,9 @@ class StudentStopFeedView(views.APIView):
             }
             stop_timeline = []
             for rs in route_stops:
-                if rs.sequence_order < trip.current_stop_order:
+                if rs.sequence_order < current_order:
                     stop_status = 'crossed'
-                elif rs.sequence_order == trip.current_stop_order:
+                elif rs.sequence_order == current_order:
                     stop_status = 'current'
                 else:
                     stop_status = 'upcoming'
@@ -364,9 +418,9 @@ class StudentStopFeedView(views.APIView):
                 'gender': trip.bus.default_gender.name,
                 'tags': tags,
                 'crowd_status': trip.crowd_status,
-                'last_lat': trip.last_lat,
-                'last_lng': trip.last_lng,
-                'last_speed_kmh': trip.last_speed_kmh,
+                'last_lat': last_lat,
+                'last_lng': last_lng,
+                'last_speed_kmh': last_speed,
                 'distance_to_stop_km': dist_to_stop,
                 'distance_to_student_km': dist_to_student,
                 'eta_minutes': eta_min,

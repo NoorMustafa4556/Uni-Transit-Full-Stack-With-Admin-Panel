@@ -171,6 +171,27 @@ class EmergencySOSListCreateView(views.APIView):
             details=f"User {request.user.name} ({request.user.phone}) at ({lat}, {lng})"
         )
 
+        # Broadcast live SOS alert to admin fleet WebSocket group
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                "admin_fleet",
+                {
+                    "type": "sos_alert_broadcast",
+                    "sos": {
+                        "id": sos.id,
+                        "user_name": request.user.name,
+                        "user_phone": request.user.phone,
+                        "latitude": sos.latitude,
+                        "longitude": sos.longitude,
+                        "message": sos.message,
+                        "created_at": sos.created_at.isoformat(),
+                    }
+                }
+            )
+
         return Response(EmergencySOSSerializer(sos).data, status=status.HTTP_201_CREATED)
 
 
